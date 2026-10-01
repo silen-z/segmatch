@@ -40,8 +40,12 @@ final class Flattener
             $compiledGroups[] = $group->metadata;
         }
 
+        // Must run before node ids are assigned: it prunes the tree.
+        $static = StaticTable::extract($root, $routes, $scopeIds);
+
         return [
             'version' => Layout::FORMAT_VERSION,
+            'static' => $static,
             'nodes' => self::nodes($root, $scopeIds),
             'routes' => self::routes($routes),
             'groups' => $compiledGroups,

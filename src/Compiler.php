@@ -22,7 +22,8 @@ use function sprintf;
  *
  * @psalm-type CompiledNode = array{0: array<array-key, int>, 1: int, 2: int, 3: int, 4: int, 5: int}
  * @psalm-type CompiledRoute = array{0: mixed, 1: list<string>}
- * @psalm-type CompiledRoutes = array{version: int, nodes: list<CompiledNode>, routes: list<CompiledRoute>, groups: list<mixed>}
+ * @psalm-type CompiledStatic = array{0: int, 1: list<int>}
+ * @psalm-type CompiledRoutes = array{version: int, static: array<array-key, CompiledStatic>, nodes: list<CompiledNode>, routes: list<CompiledRoute>, groups: list<mixed>}
  */
 final class Compiler
 {

@@ -27,6 +27,11 @@ final class Exporter
      */
     public static function export(array $compiled): string
     {
+        $static = [];
+        foreach ($compiled['static'] as $path => $entry) {
+            $static[] = '        ' . var_export($path, return: true) . ' => ' . self::inline($entry) . ',';
+        }
+
         $nodes = [];
         foreach ($compiled['nodes'] as $id => $node) {
             $nodes[] = '        /* ' . $id . ' */ ' . self::inline($node) . ',';
@@ -41,6 +46,9 @@ final class Exporter
             '',
             'return [',
             "    'version' => " . var_export($compiled['version'], return: true) . ',',
+            "    'static' => [",
+            ...$static,
+            '    ],',
             "    'nodes' => [",
             ...$nodes,
             '    ],',

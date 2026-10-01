@@ -161,27 +161,41 @@ final class CompilerTest extends TestCase
         $collector->group(
             '/api',
             static function (RouteCollector $r): void {
+                $r->add('/users', 'users');
                 $r->add('/users/{id}', 'user');
+                $r->add('/health', 'health');
                 $r->add('/files/{path+}', 'files');
             },
             'auth',
         );
+        $collector->add('/about', 'about');
 
         $compiled = Compiler::compile($collector);
 
         static::assertSame(
             [
-                'version' => 1,
+                'version' => 2,
+                // Parameterless routes are looked up by full path, with their group ids.
+                'static' => [
+                    '/api/users' => [0, [0]],
+                    '/api/health' => [2, [0]],
+                    '/about' => [4, []],
+                ],
+                // "/about" and "/api/health" are pruned from the tree; "/api/users" stays as the
+                // parent of {id}, but no longer carries a route.
                 'nodes' => [
                     [['api' => 1], -1, -1, 0, -1, -1],
                     [['users' => 2, 'files' => 3], -1, -1, 0, -1, 0],
                     [[], 4, -1, 0, -1, -1],
-                    [[], -1, 1, 1, -1, -1],
-                    [[], -1, -1, 0, 0, -1],
+                    [[], -1, 3, 1, -1, -1],
+                    [[], -1, -1, 0, 1, -1],
                 ],
                 'routes' => [
+                    ['users', []],
                     ['user', ['id']],
+                    ['health', []],
                     ['files', ['path']],
+                    ['about', []],
                 ],
                 'groups' => ['auth'],
             ],

@@ -117,6 +117,35 @@ final class MatcherTest extends TestCase
         static::assertSame('user', $matcher->match('/users/42')?->route);
     }
 
+    public function testStaticRouteDoesNotBlockLongerParameterRoute(): void
+    {
+        // "/users/me" is answered from the static table and its tree node is pruned, so a longer
+        // request must still reach the parameter branch.
+        $matcher = self::matcher(static function (RouteCollector $r): void {
+            $r->add('/users/me', 'me');
+            $r->add('/users/{id}/edit', 'edit');
+        });
+
+        static::assertSame('me', $matcher->match('/users/me')?->route);
+        static::assertSame(['id' => 'me'], $matcher->match('/users/me/edit')?->params);
+        static::assertNull($matcher->match('/users/me/'));
+    }
+
+    public function testStaticRoutesKeepTheirGroupMetadata(): void
+    {
+        $matcher = self::matcher(static function (RouteCollector $r): void {
+            $r->group(
+                '/api',
+                static function (RouteCollector $r): void {
+                    $r->group('/v1', static fn(RouteCollector $r) => $r->add('/status', 'status'));
+                },
+                'api',
+            );
+        });
+
+        static::assertSame(['api'], $matcher->match('/api/v1/status')?->groups);
+    }
+
     public function testParameterTakesPrecedenceOverCatchAll(): void
     {
         $matcher = self::matcher(static function (RouteCollector $r): void {

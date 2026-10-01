@@ -18,11 +18,18 @@ namespace silenz\PhpRouter\Internal;
  *         NODE_SCOPE     => 1,   // group metadata id attached to this node, or NONE
  *     ]
  *
+ * Routes without any parameter bypass the tree entirely through the static table:
+ *
+ *     '/api/users' => [
+ *         STATIC_ROUTE  => 2,      // route id
+ *         STATIC_SCOPES => [0],    // group metadata ids along the path, outermost first
+ *     ]
+ *
  * @internal
  */
 final class Layout
 {
-    public const int FORMAT_VERSION = 1;
+    public const int FORMAT_VERSION = 2;
 
     public const int NONE = -1;
 
@@ -35,4 +42,7 @@ final class Layout
 
     public const int ROUTE_METADATA = 0;
     public const int ROUTE_PARAMS = 1;
+
+    public const int STATIC_ROUTE = 0;
+    public const int STATIC_SCOPES = 1;
 }

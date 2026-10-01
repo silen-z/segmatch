@@ -25,6 +25,7 @@ use function substr;
  * @psalm-import-type CompiledNode from Compiler
  * @psalm-import-type CompiledRoute from Compiler
  * @psalm-import-type CompiledRoutes from Compiler
+ * @psalm-import-type CompiledStatic from Compiler
  */
 final readonly class Matcher
 {
@@ -34,6 +35,9 @@ final readonly class Matcher
     private const int PARAM = 2;
     private const int CATCH = 3;
     private const int EXHAUSTED = 4;
+
+    /** @var array<array-key, CompiledStatic> full path => route, for routes without parameters */
+    private array $static;
 
     /** @var list<CompiledNode> */
     private array $nodes;
@@ -57,6 +61,7 @@ final readonly class Matcher
             ));
         }
 
+        $this->static = $compiled['static'];
         $this->nodes = $compiled['nodes'];
         $this->routes = $compiled['routes'];
         $this->groups = $compiled['groups'];
@@ -67,6 +72,17 @@ final readonly class Matcher
      */
     public function match(string $path): ?RouteMatch
     {
+        // Routes without parameters are answered by a single hash lookup.
+        $static = $this->static[$path] ?? null;
+        if ($static !== null) {
+            $groups = [];
+            foreach ($static[Layout::STATIC_SCOPES] as $scope) {
+                $groups[] = $this->groups[$scope];
+            }
+
+            return new RouteMatch($this->routes[$static[Layout::STATIC_ROUTE]][Layout::ROUTE_METADATA], $groups, []);
+        }
+
         if ($path === '' || $path[0] !== '/') {
             return null;
         }
