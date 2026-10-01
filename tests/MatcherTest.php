@@ -9,22 +9,19 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Matcher;
+use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
-use SilenZ\Segmatch\RouteSet;
 
 use function sprintf;
 
 final class MatcherTest extends TestCase
 {
     /**
-     * @param Closure(RouteSet): void $define
+     * @param Closure(): list<RouteDefinition> $define
      */
     private static function matcher(Closure $define): Matcher
     {
-        $collector = new RouteSet();
-        $define($collector);
-
-        return new Matcher(Compiler::compile($collector));
+        return new Matcher(Compiler::compile($define()));
     }
 
     /**
@@ -47,11 +44,11 @@ final class MatcherTest extends TestCase
 
     public function testMatchesStaticRoutes(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/', 'home');
-            $r->add('/users', 'users');
-            $r->add('/users/active', 'active');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/', 'home'),
+            new RouteDefinition('/users', 'users'),
+            new RouteDefinition('/users/active', 'active'),
+        ]);
 
         static::assertSame('home', self::find($matcher, '/')?->route);
         static::assertSame('users', self::find($matcher, '/users')?->route);
@@ -62,7 +59,7 @@ final class MatcherTest extends TestCase
 
     public function testRejectsPathsWithoutLeadingSlash(): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/', 'home'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/', 'home')]);
 
         static::assertNull(self::find($matcher, ''));
         static::assertNull(self::find($matcher, 'users'));
@@ -70,10 +67,10 @@ final class MatcherTest extends TestCase
 
     public function testTrailingSlashIsSignificant(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/foo', 'no-slash');
-            $r->add('/bar/', 'slash');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/foo', 'no-slash'),
+            new RouteDefinition('/bar/', 'slash'),
+        ]);
 
         static::assertSame('no-slash', self::find($matcher, '/foo')?->route);
         static::assertNull(self::find($matcher, '/foo/'));
@@ -83,7 +80,7 @@ final class MatcherTest extends TestCase
 
     public function testExtractsNamedParameters(): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/users/{id}/posts/{post}', 'post'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/users/{id}/posts/{post}', 'post')]);
 
         $match = self::mustMatch($matcher, '/users/123/posts/456');
 
@@ -93,24 +90,24 @@ final class MatcherTest extends TestCase
 
     public function testParametersAreUrlDecoded(): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/search/{term}', 'search'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/search/{term}', 'search')]);
 
         static::assertSame(['term' => 'a b/c'], self::find($matcher, '/search/a%20b%2Fc')?->params);
     }
 
     public function testParameterDoesNotMatchEmptySegment(): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/users/{id}', 'user'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/users/{id}', 'user')]);
 
         static::assertNull(self::find($matcher, '/users/'));
     }
 
     public function testParameterNamesMayDifferAcrossRoutesSharingANode(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/items/{id}/edit', 'edit');
-            $r->add('/items/{slug}/view', 'view');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/items/{id}/edit', 'edit'),
+            new RouteDefinition('/items/{slug}/view', 'view'),
+        ]);
 
         static::assertSame(['id' => '1'], self::find($matcher, '/items/1/edit')?->params);
         static::assertSame(['slug' => 'x'], self::find($matcher, '/items/x/view')?->params);
@@ -118,10 +115,10 @@ final class MatcherTest extends TestCase
 
     public function testStaticTakesPrecedenceOverParameter(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/users/{id}', 'user');
-            $r->add('/users/me', 'me');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/users/{id}', 'user'),
+            new RouteDefinition('/users/me', 'me'),
+        ]);
 
         static::assertSame('me', self::find($matcher, '/users/me')?->route);
         static::assertSame('user', self::find($matcher, '/users/42')?->route);
@@ -131,10 +128,10 @@ final class MatcherTest extends TestCase
     {
         // "/users/me" is answered from the static table and its tree node is pruned, so a longer
         // request must still reach the parameter branch.
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/users/me', 'me');
-            $r->add('/users/{id}/edit', 'edit');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/users/me', 'me'),
+            new RouteDefinition('/users/{id}/edit', 'edit'),
+        ]);
 
         static::assertSame('me', self::find($matcher, '/users/me')?->route);
         static::assertSame(['id' => 'me'], self::find($matcher, '/users/me/edit')?->params);
@@ -143,10 +140,10 @@ final class MatcherTest extends TestCase
 
     public function testParameterTakesPrecedenceOverCatchAll(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/files/{rest*}', 'catch');
-            $r->add('/files/{name}', 'param');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/files/{rest*}', 'catch'),
+            new RouteDefinition('/files/{name}', 'param'),
+        ]);
 
         static::assertSame('param', self::find($matcher, '/files/a')?->route);
         static::assertSame('catch', self::find($matcher, '/files/a/b')?->route);
@@ -154,10 +151,10 @@ final class MatcherTest extends TestCase
 
     public function testBacktracksFromStaticToParameter(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/foo/bar', 'static');
-            $r->add('/foo/{id}/baz', 'param');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/foo/bar', 'static'),
+            new RouteDefinition('/foo/{id}/baz', 'param'),
+        ]);
 
         $match = self::mustMatch($matcher, '/foo/bar/baz');
 
@@ -167,11 +164,11 @@ final class MatcherTest extends TestCase
 
     public function testBacktracksAcrossSeveralLevelsToCatchAll(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/a/b/c', 'static');
-            $r->add('/a/{x}/d', 'param');
-            $r->add('/{rest+}', 'catch');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/a/b/c', 'static'),
+            new RouteDefinition('/a/{x}/d', 'param'),
+            new RouteDefinition('/{rest+}', 'catch'),
+        ]);
 
         static::assertSame('static', self::find($matcher, '/a/b/c')?->route);
         static::assertSame('param', self::find($matcher, '/a/b/d')?->route);
@@ -183,10 +180,10 @@ final class MatcherTest extends TestCase
 
     public function testBacktrackingDiscardsParametersOfAbandonedBranch(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/{a}/{b}/x', 'deep');
-            $r->add('/{c}/y', 'shallow');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/{a}/{b}/x', 'deep'),
+            new RouteDefinition('/{c}/y', 'shallow'),
+        ]);
 
         static::assertSame(['c' => 'one'], self::find($matcher, '/one/y')?->params);
         static::assertSame(['a' => 'one', 'b' => 'two'], self::find($matcher, '/one/two/x')?->params);
@@ -208,7 +205,7 @@ final class MatcherTest extends TestCase
     #[DataProvider('catchAllZeroProvider')]
     public function testCatchAllZeroOrMore(string $path, ?string $expected): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/assets/{path*}', 'assets'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/assets/{path*}', 'assets')]);
 
         static::assertSame($expected, self::find($matcher, $path)?->params['path']);
     }
@@ -227,17 +224,17 @@ final class MatcherTest extends TestCase
     #[DataProvider('catchAllOneProvider')]
     public function testCatchAllOneOrMore(string $path, ?string $expected): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/assets/{path+}', 'assets'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/assets/{path+}', 'assets')]);
 
         static::assertSame($expected, self::find($matcher, $path)?->params['path']);
     }
 
     public function testExactRouteTakesPrecedenceOverEmptyCatchAll(): void
     {
-        $matcher = self::matcher(static function (RouteSet $r): void {
-            $r->add('/docs', 'index');
-            $r->add('/docs/{page*}', 'page');
-        });
+        $matcher = self::matcher(static fn(): array => [
+            new RouteDefinition('/docs', 'index'),
+            new RouteDefinition('/docs/{page*}', 'page'),
+        ]);
 
         static::assertSame('index', self::find($matcher, '/docs')?->route);
         static::assertSame('page', self::find($matcher, '/docs/')?->route);
@@ -245,7 +242,7 @@ final class MatcherTest extends TestCase
 
     public function testCatchAllAfterParameter(): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/repo/{name}/{path*}', 'tree'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/repo/{name}/{path*}', 'tree')]);
 
         static::assertSame(
             ['name' => 'router', 'path' => 'src/Matcher.php'],
@@ -255,7 +252,7 @@ final class MatcherTest extends TestCase
 
     public function testParametersAcrossSeveralLevels(): void
     {
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/tenants/{tenant}/users/{id}', 'user'));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/tenants/{tenant}/users/{id}', 'user')]);
 
         $match = self::mustMatch($matcher, '/tenants/acme/users/7');
         static::assertSame('user', $match->route);
@@ -265,7 +262,7 @@ final class MatcherTest extends TestCase
     public function testMetadataIsReturnedUntouched(): void
     {
         $metadata = ['handler' => ['UserController', 'show'], 'middleware' => ['auth'], 'methods' => ['GET']];
-        $matcher = self::matcher(static fn(RouteSet $r) => $r->add('/users/{id}', $metadata));
+        $matcher = self::matcher(static fn(): array => [new RouteDefinition('/users/{id}', $metadata)]);
 
         static::assertSame($metadata, self::find($matcher, '/users/1')?->route);
     }

@@ -10,8 +10,8 @@ use LogicException;
 use SilenZ\Segmatch\Cache\FileCache;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Matcher;
+use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\Router;
-use SilenZ\Segmatch\RouteSet;
 
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
@@ -30,15 +30,17 @@ final class Routers
 {
     /**
      * @param list<string> $routes
+     *
+     * @return list<RouteDefinition>
      */
-    public static function flatRouteSet(array $routes): RouteSet
+    public static function flatRoutes(array $routes): array
     {
-        $set = new RouteSet();
+        $definitions = [];
         foreach ($routes as $index => $route) {
-            $set->add($route, $index);
+            $definitions[] = new RouteDefinition($route, $index);
         }
 
-        return $set;
+        return $definitions;
     }
 
     /**
@@ -46,7 +48,7 @@ final class Routers
      */
     public static function flat(array $routes): Matcher
     {
-        return new Matcher(Compiler::compile(self::flatRouteSet($routes)));
+        return new Matcher(Compiler::compile(self::flatRoutes($routes)));
     }
 
     public const string CACHE_DIRECTORY = __DIR__ . '/../var/bench-cache';
@@ -62,7 +64,7 @@ final class Routers
         $routes = Fixtures::get($fixture)['routes'];
         $fastRouteFile = self::CACHE_DIRECTORY . '/' . $fixture . '.fast-route.php';
 
-        new FileCache(self::CACHE_DIRECTORY)->set($fixture, Compiler::compile(self::flatRouteSet($routes)));
+        new FileCache(self::CACHE_DIRECTORY)->set($fixture, Compiler::compile(self::flatRoutes($routes)));
 
         // FastRoute only writes its cache when the file does not exist yet.
         if (is_file($fastRouteFile)) {
@@ -80,7 +82,7 @@ final class Routers
     public static function cachedFlat(string $fixture): Router
     {
         return new Router(
-            static fn(RouteSet $_routes) => throw new LogicException('Cache entry missing.'),
+            static fn(): iterable => throw new LogicException('Cache entry missing.'),
             new FileCache(self::CACHE_DIRECTORY),
             $fixture,
         );

@@ -14,16 +14,16 @@ come from `Http\Routes`, a declaration layer built on top of it (see [HTTP route
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\Router;
-use SilenZ\Segmatch\RouteSet;
 
 $router = new Router(
-    static function (RouteSet $routes): void {
-        $routes->add('/', ['handler' => 'home']);
-        $routes->add('/api/users/{id}', ['handler' => 'users.show', 'middleware' => ['auth']]);
-        $routes->add('/assets/{path+}', ['handler' => 'assets']);
-    },
+    static fn(): array => [
+        new RouteDefinition('/', ['handler' => 'home']),
+        new RouteDefinition('/api/users/{id}', ['handler' => 'users.show', 'middleware' => ['auth']]),
+        new RouteDefinition('/assets/{path+}', ['handler' => 'assets']),
+    ],
     cache: APP_DEBUG ? null : new FileCache(__DIR__ . '/var/cache'),
     cacheKey: 'routes-' . APP_VERSION,
 );
@@ -35,6 +35,10 @@ if ($result instanceof RouteMatch) {
 }
 ```
 
+- **Routes come from a callable** returning an iterable of `RouteDefinition`s: an array, a
+  generator (`yield`, `yield from` to combine sources), or an invokable object. A
+  `RouteDefinition` parses its path when it's created, so a malformed path throws where it's
+  declared.
 - `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
   Parameter values are `rawurldecode`d.
 - `Router` is a thin entry point over the lower-level pieces. `new Matcher(Compiler::compile($routes))`
@@ -68,8 +72,8 @@ Several routes may share a path, typically one per HTTP method. A *guard* passed
 decides which of them applies:
 
 ```php
-$routes->add('/users', ['methods' => ['GET'], 'handler' => 'users.list']);
-$routes->add('/users', ['methods' => ['POST'], 'handler' => 'users.create']);
+new RouteDefinition('/users', ['methods' => ['GET'], 'handler' => 'users.list']),
+new RouteDefinition('/users', ['methods' => ['POST'], 'handler' => 'users.create']),
 
 $result = $router->match($path, static fn(array $route, array $params): bool => in_array($method, $route['methods'], true));
 
@@ -170,8 +174,8 @@ $router = new Router(
 - **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
   `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
 - **Definitions as a class:** the definition callable may be an invokable class
-  (`Routes::define(new AppRoutes())`). `Router` also accepts any invokable that takes a `RouteSet`
-  directly.
+  (`Routes::define(new AppRoutes())`). `Router` also accepts any invokable that returns
+  `RouteDefinition`s directly.
 - **Handlers and middleware are stored in the cache,** so they must be plain data: class names,
   `[Class::class, 'method']` arrays, strings, enums. Not closures.
 
@@ -233,8 +237,8 @@ patterns, `where()` on a parameter the path doesn't have, and guard classes that
 ## Architecture
 
 ```
-RouteSet ──► TreeBuilder ──► Flattener ──► RouteCache ──► Matcher
- paths       tree + checks   tables        e.g. FileCache  static hash lookup, then tree loop + backtracking
+RouteDefinitions ──► TreeBuilder ──► Flattener ──► RouteCache ──► Matcher
+ paths + metadata    tree + checks   tables        e.g. FileCache  static hash lookup, then tree loop + backtracking
 
 Router wires these together: on a cache miss it declares, compiles and stores the routes.
 ```

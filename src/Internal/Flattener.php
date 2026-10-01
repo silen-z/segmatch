@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SilenZ\Segmatch\Internal;
 
 use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\RouteDefinition;
 
 use function count;
 use function spl_object_id;

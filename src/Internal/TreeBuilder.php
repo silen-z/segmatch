@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SilenZ\Segmatch\Internal;
 
 use SilenZ\Segmatch\Exception\InvalidRouteException;
+use SilenZ\Segmatch\RouteDefinition;
 
 use function array_slice;
 use function count;

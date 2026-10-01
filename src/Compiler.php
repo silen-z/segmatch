@@ -25,16 +25,28 @@ use function sprintf;
 final class Compiler
 {
     /**
+     * @param iterable<mixed, mixed> $definitions {@see RouteDefinition}s in declaration order, which
+     *     decides between routes sharing a path; anything else is rejected
+     *
      * @return CompiledRoutes
      *
      * @throws InvalidRouteException
      */
-    public static function compile(RouteSet $routeSet): array
+    public static function compile(iterable $definitions): array
     {
-        $routes = $routeSet->routes();
+        $routes = [];
+        // @mago-expect analysis:mixed-assignment
+        foreach ($definitions as $route) {
+            if (!$route instanceof RouteDefinition) {
+                throw new InvalidRouteException(sprintf(
+                    'Routes must be given as %s instances, got %s.',
+                    RouteDefinition::class,
+                    get_debug_type($route),
+                ));
+            }
 
-        foreach ($routes as $route) {
             self::assertExportable($route->metadata, sprintf('route "%s"', $route->path));
+            $routes[] = $route;
         }
 
         return Flattener::flatten(TreeBuilder::build($routes), $routes);

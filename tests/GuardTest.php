@@ -9,8 +9,8 @@ use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\NoMatch;
+use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
-use SilenZ\Segmatch\RouteSet;
 
 use function array_key_exists;
 use function array_map;
@@ -24,9 +24,9 @@ final class GuardTest extends TestCase
      */
     private static function matcher(array $routes): Matcher
     {
-        $set = new RouteSet();
+        $set = [];
         foreach ($routes as [$path, $metadata]) {
-            $set->add($path, $metadata);
+            $set[] = new RouteDefinition($path, $metadata);
         }
 
         return new Matcher(Compiler::compile($set));

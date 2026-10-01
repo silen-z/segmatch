@@ -8,9 +8,9 @@ use LogicException;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Cache\FileCache;
 use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\Router;
-use SilenZ\Segmatch\RouteSet;
 use SilenZ\Segmatch\Tests\Fixtures\Method;
 
 use function basename;
@@ -48,8 +48,8 @@ final class FileCacheTest extends TestCase
 
     public function testStoredRoutesAreReadBackUnchanged(): void
     {
-        $routes = new RouteSet();
-        $routes->add('/api/users/{id}', [
+        $routes = [];
+        $routes[] = new RouteDefinition('/api/users/{id}', [
             'methods' => [Method::Get, Method::Put],
             'handler' => ['UserController', 'show'],
             'weight' => 1.5,
@@ -57,8 +57,8 @@ final class FileCacheTest extends TestCase
             'extra' => null,
             "quote'd" => "it's",
         ]);
-        $routes->add('/api/123', 'numeric segment');
-        $routes->add('/assets/{path*}', 'assets');
+        $routes[] = new RouteDefinition('/api/123', 'numeric segment');
+        $routes[] = new RouteDefinition('/assets/{path*}', 'assets');
         $compiled = Compiler::compile($routes);
 
         $cache = new FileCache($this->directory);
@@ -75,7 +75,7 @@ final class FileCacheTest extends TestCase
     public function testFileThatDoesNotReturnAnArrayIsIgnored(): void
     {
         $cache = new FileCache($this->directory);
-        $cache->set('routes', Compiler::compile(new RouteSet()));
+        $cache->set('routes', Compiler::compile([]));
         file_put_contents($cache->file('routes'), data: '<?php return 42;');
 
         static::assertNull($cache->get('routes'));
@@ -106,7 +106,7 @@ final class FileCacheTest extends TestCase
     public function testRouterUsesTheFileCache(): void
     {
         $cache = new FileCache($this->directory);
-        new Router(static fn(RouteSet $r) => $r->add('/a', 'a'), $cache, 'app')->match('/a');
+        new Router(static fn(): array => [new RouteDefinition('/a', 'a')], $cache, 'app')->match('/a');
 
         $router = new Router(static fn() => throw new LogicException('should not compile'), $cache, 'app');
 

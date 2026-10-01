@@ -10,8 +10,8 @@ use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Exception\InvalidRouteException;
 use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\NoMatch;
+use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
-use SilenZ\Segmatch\RouteSet;
 use SilenZ\Segmatch\Tests\Support\RouteOracle;
 
 use function array_map;
@@ -48,12 +48,12 @@ final class MatcherPropertyTest extends TestCase
         mt_srand($seed);
         $routes = self::randomRoutes();
 
-        $set = new RouteSet();
-        foreach ($routes as $index => $path) {
-            $set->add($path, $index);
-        }
-
         try {
+            $set = [];
+            foreach ($routes as $index => $path) {
+                $set[] = new RouteDefinition($path, $index);
+            }
+
             $matcher = new Matcher(Compiler::compile($set));
         } catch (InvalidRouteException) {
             // Random sets may mix {r*} and {r+} on one node, which is rejected by design.

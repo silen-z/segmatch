@@ -21,14 +21,15 @@ use SilenZ\Segmatch\Internal\Layout;
  */
 final class Router
 {
-    /** @var Closure(RouteSet): void */
+    /** @var Closure(): iterable<mixed, RouteDefinition> */
     private readonly Closure $routes;
 
     private ?Matcher $matcher = null;
 
     /**
-     * @param callable(RouteSet): void $routes declares the routes, e.g. a closure, an invokable object
-     *     or {@see Http\Routes}; only called when there is no usable cache entry
+     * @param callable(): iterable<mixed, RouteDefinition> $routes returns the routes (an array or a
+     *     generator), e.g. a closure, an invokable object or {@see Http\Routes}; only called when there
+     *     is no usable cache entry
      * @param ?RouteCache $cache where compiled routes are kept; null disables caching
      * @param string $cacheKey identifies these routes in the cache
      */
@@ -68,9 +69,7 @@ final class Router
             return $cached;
         }
 
-        $routes = new RouteSet();
-        ($this->routes)($routes);
-        $compiled = Compiler::compile($routes);
+        $compiled = Compiler::compile(($this->routes)());
         $this->cache?->set($this->cacheKey, $compiled);
 
         return $compiled;

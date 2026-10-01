@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SilenZ\Segmatch\Internal;
 
+use SilenZ\Segmatch\RouteDefinition;
+
 /**
  * Moves routes without parameters out of the tree into a table keyed by the full path, so the
  * matcher answers them with one hash lookup.

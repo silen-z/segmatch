@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Exception\InvalidRouteException;
-use SilenZ\Segmatch\RouteSet;
+use SilenZ\Segmatch\RouteDefinition;
 use stdClass;
 
 use function preg_quote;
@@ -17,53 +17,57 @@ use function preg_quote;
 final class CompilerTest extends TestCase
 {
     /**
-     * @return iterable<string, array{Closure(RouteSet): void, string}>
+     * @return iterable<string, array{Closure(): list<mixed>, string}>
      */
     public static function invalidDeclarationProvider(): iterable
     {
         yield 'missing leading slash' => [
-            static fn(RouteSet $r) => $r->add('users', 'x'),
+            static fn(): array => [new RouteDefinition('users', 'x')],
             'must start with "/"',
         ];
         yield 'empty segment' => [
-            static fn(RouteSet $r) => $r->add('/a//b', 'x'),
+            static fn(): array => [new RouteDefinition('/a//b', 'x')],
             'empty segment',
         ];
         yield 'partial placeholder' => [
-            static fn(RouteSet $r) => $r->add('/file.{ext}', 'x'),
+            static fn(): array => [new RouteDefinition('/file.{ext}', 'x')],
             'invalid placeholder',
         ];
         yield 'invalid parameter name' => [
-            static fn(RouteSet $r) => $r->add('/{1st}', 'x'),
+            static fn(): array => [new RouteDefinition('/{1st}', 'x')],
             'invalid placeholder',
         ];
         yield 'duplicate parameter name' => [
-            static fn(RouteSet $r) => $r->add('/{id}/{id}', 'x'),
+            static fn(): array => [new RouteDefinition('/{id}/{id}', 'x')],
             'more than once',
         ];
         yield 'catch-all not last' => [
-            static fn(RouteSet $r) => $r->add('/{path*}/edit', 'x'),
+            static fn(): array => [new RouteDefinition('/{path*}/edit', 'x')],
             'must be the last segment',
         ];
         yield 'mixed catch-all kinds on one node' => [
-            static function (RouteSet $r): void {
-                $r->add('/files/{a*}', 'a');
-                $r->add('/files/{b+}', 'b');
-            },
+            static fn(): array => [
+                new RouteDefinition('/files/{a*}', 'a'),
+                new RouteDefinition('/files/{b+}', 'b'),
+            ],
             'Catch-all route "/files/{b+}" conflicts with catch-all route "/files/{a*}"',
         ];
         yield 'object in route metadata' => [
-            static fn(RouteSet $r) => $r->add('/users', ['handler' => new stdClass()]),
+            static fn(): array => [new RouteDefinition('/users', ['handler' => new stdClass()])],
             'Metadata of route "/users" contains a value of type stdClass',
         ];
         yield 'closure nested in route metadata' => [
-            static fn(RouteSet $r) => $r->add('/users', ['middleware' => [static fn() => null]]),
+            static fn(): array => [new RouteDefinition('/users', ['middleware' => [static fn() => null]])],
             'Metadata of route "/users" contains a value of type Closure',
+        ];
+        yield 'something other than a route definition' => [
+            static fn(): array => [new RouteDefinition('/a', 'a'), '/b'],
+            'Routes must be given as ' . RouteDefinition::class . ' instances, got string',
         ];
     }
 
     /**
-     * @param Closure(RouteSet): void $define
+     * @param Closure(): list<mixed> $define
      */
     #[DataProvider('invalidDeclarationProvider')]
     public function testRejectsInvalidDeclarations(Closure $define, string $message): void
@@ -71,21 +75,20 @@ final class CompilerTest extends TestCase
         $this->expectException(InvalidRouteException::class);
         $this->expectExceptionMessageMatches('/' . preg_quote($message, delimiter: '/') . '/');
 
-        $routes = new RouteSet();
-        $define($routes);
-        Compiler::compile($routes);
+        Compiler::compile($define());
     }
 
     public function testCompilesToFlatNodeTable(): void
     {
-        $routes = new RouteSet();
-        $routes->add('/api/users', 'users');
-        $routes->add('/api/users/{id}', 'user');
-        $routes->add('/api/health', 'health');
-        $routes->add('/api/files/{path+}', 'files');
-        $routes->add('/about', 'about');
-        $routes->add('/api/users', 'create-user');
-        $routes->add('/api/users/{name}', 'user-by-name');
+        $routes = [
+            new RouteDefinition('/api/users', 'users'),
+            new RouteDefinition('/api/users/{id}', 'user'),
+            new RouteDefinition('/api/health', 'health'),
+            new RouteDefinition('/api/files/{path+}', 'files'),
+            new RouteDefinition('/about', 'about'),
+            new RouteDefinition('/api/users', 'create-user'),
+            new RouteDefinition('/api/users/{name}', 'user-by-name'),
+        ];
 
         static::assertSame(
             [
