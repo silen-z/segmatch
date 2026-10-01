@@ -10,6 +10,8 @@ use PHPUnit\Framework\TestCase;
 use silenz\PhpRouter\Benchmarks\Fixtures;
 use silenz\PhpRouter\Benchmarks\Routers;
 use silenz\PhpRouter\Matcher;
+use silenz\PhpRouter\NoMatch;
+use silenz\PhpRouter\RouteMatch;
 
 use function array_filter;
 use function array_key_exists;
@@ -54,13 +56,13 @@ final class BenchmarkFixturesTest extends TestCase
         $fastRoute = $fastRouteRouter->dispatch('GET', $path);
 
         if ($case === 'not-found' || $case === 'backtrack-miss') {
-            static::assertNull($flat);
+            static::assertInstanceOf(NoMatch::class, $flat);
             static::assertSame(Dispatcher::NOT_FOUND, $fastRoute[0]);
 
             return;
         }
 
-        static::assertNotNull($flat, 'flat router found no match');
+        static::assertInstanceOf(RouteMatch::class, $flat, 'flat router found no match');
         static::assertSame(Dispatcher::FOUND, $fastRoute[0], 'FastRoute found no match');
         static::assertSame($fastRoute[1], $flat->route);
         // FastRoute omits an optional catch-all that matched nothing; this router reports ''.
@@ -82,7 +84,7 @@ final class BenchmarkFixturesTest extends TestCase
         $flat = $flatRouter->match($path);
         $fastRoute = $fastRouteRouter->dispatch('GET', $path);
 
-        if ($flat === null) {
+        if ($flat instanceof NoMatch) {
             static::assertSame(Dispatcher::NOT_FOUND, $fastRoute[0]);
 
             return;

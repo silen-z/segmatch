@@ -16,11 +16,11 @@ final class BuildNode
 
     public ?BuildNode $param = null;
 
-    /** Index of the route attached through a catch-all edge. */
-    public ?int $catchRoute = null;
+    /** @var list<int> indexes of the routes attached through a catch-all edge, in declaration order */
+    public array $catchRoutes = [];
 
     public ?SegmentType $catchType = null;
 
-    /** Index of the route terminating at this node. */
-    public ?int $route = null;
+    /** @var list<int> indexes of the routes terminating at this node, in declaration order */
+    public array $routes = [];
 }

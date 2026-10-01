@@ -12,9 +12,9 @@ namespace silenz\PhpRouter\Internal;
  *     [
  *         NODE_STATIC    => ['users' => 12, 'posts' => 17], // segment => child node id
  *         NODE_PARAM     => 3,   // child node id of the {param} edge, or NONE
- *         NODE_CATCH     => 7,   // route id of the catch-all edge, or NONE
+ *         NODE_CATCH     => [7], // route ids of the catch-all edge, in declaration order
  *         NODE_CATCH_MIN => 0,   // 0 for {name*}, 1 for {name+}
- *         NODE_ROUTE     => 42,  // route id terminating at this node, or NONE
+ *         NODE_ROUTE     => [42, 43], // route ids terminating at this node, in declaration order
  *     ]
  *
  * A compiled route is a list:
@@ -25,13 +25,13 @@ namespace silenz\PhpRouter\Internal;
  *     ]
  *
  * Routes without any parameter bypass the tree entirely through the static table, which maps the
- * full path to the route id.
+ * full path to its route ids.
  *
  * @internal
  */
 final class Layout
 {
-    public const int FORMAT_VERSION = 3;
+    public const int FORMAT_VERSION = 4;
 
     public const int NONE = -1;
 

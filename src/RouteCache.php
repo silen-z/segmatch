@@ -10,10 +10,8 @@ use silenz\PhpRouter\Internal\Exporter;
 use silenz\PhpRouter\Internal\Layout;
 
 use function bin2hex;
-use function clearstatcache;
 use function dirname;
 use function file_put_contents;
-use function filemtime;
 use function function_exists;
 use function is_array;
 use function is_dir;
@@ -31,60 +29,42 @@ use function unlink;
  * Stores compiled routes as a PHP file that is loaded with a plain `require` (and therefore served
  * from OPcache in production).
  *
- * Invalidation is explicit: the cache is considered fresh when the file exists and is not older than
- * any of the given source files.
+ * Like FastRoute's cached dispatcher, the cache is identified by a key and never invalidated
+ * automatically: once the file exists it is used as is. Anything that changes the compiled routes
+ * (a deploy, configuration that decides which routes exist) must therefore change the key, e.g. by
+ * putting a version or a configuration hash into it. In development, disable the cache instead.
  *
  * @psalm-import-type CompiledRoutes from Compiler
  */
 final readonly class RouteCache
 {
+    /**
+     * @param string $cacheKey identifies the compiled routes; for this file cache it is the cache file path
+     * @param bool $enabled false compiles the routes on every load, without reading or writing the cache
+     */
     public function __construct(
-        private string $file,
+        private string $cacheKey,
+        private bool $enabled = true,
     ) {}
 
     /**
-     * Returns a matcher from the cache, recompiling it first when it is stale.
+     * Returns a matcher from the cache, or compiles (and, when enabled, caches) the routes.
      *
-     * @param Closure(RouteSet): void $define declares the routes
-     * @param list<string> $sources files whose modification invalidates the cache (e.g. the route definitions)
+     * @param Closure(RouteSet): void $define declares the routes; only called when there is no usable cache
      */
-    public function load(Closure $define, array $sources = []): Matcher
+    public function load(Closure $define): Matcher
     {
-        $compiled = $this->isFresh($sources) ? $this->read() : null;
+        $compiled = $this->enabled ? $this->read() : null;
         if ($compiled === null) {
             $routes = new RouteSet();
             $define($routes);
             $compiled = Compiler::compile($routes);
-            $this->write($compiled);
-        }
-
-        return new Matcher($compiled);
-    }
-
-    /**
-     * @param list<string> $sources
-     */
-    public function isFresh(array $sources = []): bool
-    {
-        clearstatcache(clear_realpath_cache: true, filename: $this->file);
-        if (!is_file($this->file)) {
-            return false;
-        }
-
-        $cached = filemtime($this->file);
-        if ($cached === false) {
-            return false;
-        }
-
-        foreach ($sources as $source) {
-            clearstatcache(clear_realpath_cache: true, filename: $source);
-            $modified = is_file($source) ? filemtime($source) : false;
-            if ($modified === false || $modified > $cached) {
-                return false;
+            if ($this->enabled) {
+                $this->write($compiled);
             }
         }
 
-        return true;
+        return new Matcher($compiled);
     }
 
     /**
@@ -94,24 +74,24 @@ final readonly class RouteCache
      */
     public function write(array $compiled): void
     {
-        $directory = dirname($this->file);
+        $directory = dirname($this->cacheKey);
         if (!is_dir($directory)) {
-            self::guard(
+            self::attempt(
                 static fn(): bool => mkdir($directory, permissions: 0o777, recursive: true) || is_dir($directory),
                 sprintf('Unable to create route cache directory "%s"', $directory),
             );
         }
 
-        $temporary = $this->file . '.' . bin2hex(random_bytes(6)) . '.tmp';
-        self::guard(
+        $temporary = $this->cacheKey . '.' . bin2hex(random_bytes(6)) . '.tmp';
+        self::attempt(
             static fn(): bool => file_put_contents($temporary, Exporter::export($compiled)) !== false,
             sprintf('Unable to write route cache file "%s"', $temporary),
         );
 
         try {
-            self::guard(
-                fn(): bool => rename($temporary, $this->file),
-                sprintf('Unable to move route cache file into "%s"', $this->file),
+            self::attempt(
+                fn(): bool => rename($temporary, $this->cacheKey),
+                sprintf('Unable to move route cache file into "%s"', $this->cacheKey),
             );
         } finally {
             if (is_file($temporary)) {
@@ -120,7 +100,7 @@ final readonly class RouteCache
         }
 
         if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($this->file, force: true);
+            opcache_invalidate($this->cacheKey, force: true);
         }
     }
 
@@ -129,12 +109,12 @@ final readonly class RouteCache
      */
     public function read(): ?array
     {
-        if (!is_file($this->file)) {
+        if (!is_file($this->cacheKey)) {
             return null;
         }
 
         /** @var mixed $compiled */
-        $compiled = require $this->file;
+        $compiled = require $this->cacheKey;
         if (!is_array($compiled) || ($compiled['version'] ?? null) !== Layout::FORMAT_VERSION) {
             return null;
         }
@@ -148,7 +128,7 @@ final readonly class RouteCache
      *
      * @param Closure(): bool $operation
      */
-    private static function guard(Closure $operation, string $failure): void
+    private static function attempt(Closure $operation, string $failure): void
     {
         $warning = null;
         set_error_handler(static function (int $_level, string $message) use (&$warning): bool {

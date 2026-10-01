@@ -9,9 +9,10 @@ namespace silenz\PhpRouter\Internal;
  * matcher answers them with one hash lookup.
  *
  * This does not change matching results. A request equal to such a path would follow static edges
- * all the way down (static wins at every node) and stop on exactly that route; and since a static
- * route's node is only reachable through static edges, no other request can end there. Tree nodes
- * that only existed for these routes are pruned afterwards.
+ * all the way down (static wins at every node) and stop on exactly those routes; and since their
+ * node is only reachable through static edges, no other request can end there. Tree nodes that only
+ * existed for these routes are pruned afterwards. If a guard rejects every route found here, the
+ * matcher continues in the tree, exactly as it would backtrack from that node.
  *
  * @internal
  */
@@ -22,23 +23,20 @@ final class StaticTable
      *
      * @param list<RouteDefinition> $routes
      *
-     * @return array<array-key, int> full path => route id
+     * @return array<array-key, non-empty-list<int>> full path => route ids in declaration order
      */
     public static function extract(BuildNode $root, array $routes): array
     {
         $static = [];
-        /** @var array<int, true> $extracted */
-        $extracted = [];
         foreach ($routes as $index => $route) {
             if (!self::isStatic($route)) {
                 continue;
             }
 
-            $static[$route->path] = $index;
-            $extracted[$index] = true;
+            $static[$route->path][] = $index;
         }
 
-        self::removeRoutes($root, $extracted);
+        self::removeRoutes($root);
         self::prune($root);
 
         return $static;
@@ -56,18 +54,14 @@ final class StaticTable
     }
 
     /**
-     * Static routes are only reachable through static edges, so only those need to be visited.
-     *
-     * @param array<int, true> $extracted route indexes moved to the static table
+     * A node reached through static edges only can only carry routes without parameters, all of which
+     * are now in the static table. Catch-alls hanging off such a node have a parameter and stay.
      */
-    private static function removeRoutes(BuildNode $node, array $extracted): void
+    private static function removeRoutes(BuildNode $node): void
     {
+        $node->routes = [];
         foreach ($node->static as $child) {
-            self::removeRoutes($child, $extracted);
-        }
-
-        if ($node->route !== null && ($extracted[$node->route] ?? false)) {
-            $node->route = null;
+            self::removeRoutes($child);
         }
     }
 
@@ -90,6 +84,6 @@ final class StaticTable
             $node->param = null;
         }
 
-        return $node->static === [] && $node->param === null && $node->catchRoute === null && $node->route === null;
+        return $node->static === [] && $node->param === null && $node->catchRoutes === [] && $node->routes === [];
     }
 }

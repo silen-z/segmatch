@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace silenz\PhpRouter;
 
+use Closure;
 use InvalidArgumentException;
 use silenz\PhpRouter\Internal\Layout;
 
@@ -35,7 +36,7 @@ final readonly class Matcher
     private const int CATCH = 3;
     private const int EXHAUSTED = 4;
 
-    /** @var array<array-key, int> full path => route id, for routes without parameters */
+    /** @var array<array-key, non-empty-list<int>> full path => route ids, for routes without parameters */
     private array $static;
 
     /** @var list<CompiledNode> */
@@ -63,18 +64,44 @@ final readonly class Matcher
     }
 
     /**
+     * Finds the route for a path.
+     *
+     * Without a guard, the first declared route of the best path wins. With a guard, every candidate
+     * is offered to it in precedence order (and, among routes with the same path, declaration order);
+     * a rejected route is treated as if it did not exist, so matching continues and may backtrack into
+     * parameter and catch-all branches.
+     *
+     * A guard decides whether a route applies to the request: its HTTP method, host, content type,
+     * parameter format, a feature switch. It must not check who is asking (authentication, permissions):
+     * that is middleware's job after matching, since a rejected route can fall through to another one.
+     * Guards may be called several times per match, so they must be cheap and free of side effects.
+     *
      * @param string $path request path without query string, starting with "/"
+     * @param null|Closure(mixed, array<string, string>): bool $guard receives route metadata and
+     *     URL-decoded parameters, returns whether the route applies
      */
-    public function match(string $path): ?RouteMatch
+    public function match(string $path, ?Closure $guard = null): RouteMatch|NoMatch
     {
+        /** @var list<int> $rejected */
+        $rejected = [];
+
         // Routes without parameters are answered by a single hash lookup.
-        $static = $this->static[$path] ?? Layout::NONE;
-        if ($static !== Layout::NONE) {
-            return new RouteMatch($this->routes[$static][Layout::ROUTE_METADATA], []);
+        $static = $this->static[$path] ?? null;
+        if ($static !== null) {
+            if ($guard === null) {
+                return new RouteMatch($this->routes[$static[0]][Layout::ROUTE_METADATA], []);
+            }
+
+            $match = $this->select($static, [], $guard, $rejected);
+            if ($match !== null) {
+                return $match;
+            }
+
+            // Every route of this path was rejected; parameter routes in the tree may still apply.
         }
 
         if ($path === '' || $path[0] !== '/') {
-            return null;
+            return $this->miss($rejected);
         }
 
         $nodes = $this->nodes;
@@ -97,16 +124,25 @@ final readonly class Matcher
             if ($stage === self::ENTER) {
                 $stage = self::STATIC;
                 if ($index === $count) {
-                    $route = $current[Layout::NODE_ROUTE];
-                    if ($route !== Layout::NONE) {
-                        return $this->result($route, $values);
+                    $routes = $current[Layout::NODE_ROUTE];
+                    if ($routes !== []) {
+                        $match = $guard === null
+                            ? $this->result($routes[0], $values)
+                            : $this->select($routes, $values, $guard, $rejected);
+                        if ($match !== null) {
+                            return $match;
+                        }
                     }
 
                     $catch = $current[Layout::NODE_CATCH];
-                    if ($catch !== Layout::NONE && $current[Layout::NODE_CATCH_MIN] === 0) {
+                    if ($catch !== [] && $current[Layout::NODE_CATCH_MIN] === 0) {
                         $values[$paramCount] = '';
-
-                        return $this->result($catch, $values);
+                        $match = $guard === null
+                            ? $this->result($catch[0], $values)
+                            : $this->select($catch, $values, $guard, $rejected);
+                        if ($match !== null) {
+                            return $match;
+                        }
                     }
 
                     $stage = self::EXHAUSTED;
@@ -116,10 +152,7 @@ final readonly class Matcher
             if ($stage === self::STATIC) {
                 $child = $current[Layout::NODE_STATIC][$segments[$index]] ?? Layout::NONE;
                 if ($child !== Layout::NONE) {
-                    if (
-                        $current[Layout::NODE_PARAM] !== Layout::NONE
-                        || $current[Layout::NODE_CATCH] !== Layout::NONE
-                    ) {
+                    if ($current[Layout::NODE_PARAM] !== Layout::NONE || $current[Layout::NODE_CATCH] !== []) {
                         $stack[] = [$node, $index, self::PARAM, $paramCount];
                     }
 
@@ -136,7 +169,7 @@ final readonly class Matcher
                 $param = $current[Layout::NODE_PARAM];
                 $segment = $segments[$index];
                 if ($param !== Layout::NONE && $segment !== '') {
-                    if ($current[Layout::NODE_CATCH] !== Layout::NONE) {
+                    if ($current[Layout::NODE_CATCH] !== []) {
                         $stack[] = [$node, $index, self::CATCH, $paramCount];
                     }
 
@@ -152,23 +185,49 @@ final readonly class Matcher
 
             if ($stage === self::CATCH) {
                 $catch = $current[Layout::NODE_CATCH];
-                if ($catch !== Layout::NONE) {
+                if ($catch !== []) {
                     $rest = implode('/', array_slice($segments, $index));
                     if ($rest !== '' || $current[Layout::NODE_CATCH_MIN] === 0) {
                         $values[$paramCount] = $rest;
-
-                        return $this->result($catch, $values);
+                        $match = $guard === null
+                            ? $this->result($catch[0], $values)
+                            : $this->select($catch, $values, $guard, $rejected);
+                        if ($match !== null) {
+                            return $match;
+                        }
                     }
                 }
             }
 
             $frame = array_pop($stack);
             if ($frame === null) {
-                return null;
+                return $this->miss($rejected);
             }
 
             [$node, $index, $stage, $paramCount] = $frame;
         }
+    }
+
+    /**
+     * Offers candidates to the guard in declaration order; the rejected ones are collected.
+     *
+     * @param non-empty-list<int> $candidates
+     * @param array<int, string> $values
+     * @param Closure(mixed, array<string, string>): bool $guard
+     * @param list<int> $rejected
+     */
+    private function select(array $candidates, array $values, Closure $guard, array &$rejected): ?RouteMatch
+    {
+        foreach ($candidates as $routeId) {
+            $match = $this->result($routeId, $values);
+            if ($guard($match->route, $match->params)) {
+                return $match;
+            }
+
+            $rejected[] = $routeId;
+        }
+
+        return null;
     }
 
     /**
@@ -184,5 +243,18 @@ final readonly class Matcher
         }
 
         return new RouteMatch($route[Layout::ROUTE_METADATA], $params);
+    }
+
+    /**
+     * @param list<int> $rejected
+     */
+    private function miss(array $rejected): NoMatch
+    {
+        $metadata = [];
+        foreach ($rejected as $routeId) {
+            $metadata[] = $this->routes[$routeId][Layout::ROUTE_METADATA];
+        }
+
+        return new NoMatch($metadata);
     }
 }

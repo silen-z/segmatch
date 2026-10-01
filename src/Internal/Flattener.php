@@ -71,9 +71,9 @@ final class Flattener
             $nodes[] = [
                 Layout::NODE_STATIC => $static,
                 Layout::NODE_PARAM => $node->param !== null ? $ids[spl_object_id($node->param)] : Layout::NONE,
-                Layout::NODE_CATCH => $node->catchRoute ?? Layout::NONE,
+                Layout::NODE_CATCH => $node->catchRoutes,
                 Layout::NODE_CATCH_MIN => $node->catchType === SegmentType::CatchAllOne ? 1 : 0,
-                Layout::NODE_ROUTE => $node->route ?? Layout::NONE,
+                Layout::NODE_ROUTE => $node->routes,
             ];
         }
 

@@ -14,33 +14,81 @@ This package is deliberately a small core: full paths in, metadata out. Prefixes
 ## Usage
 
 ```php
+use silenz\PhpRouter\NoMatch;
 use silenz\PhpRouter\RouteCache;
+use silenz\PhpRouter\RouteMatch;
 use silenz\PhpRouter\RouteSet;
 
-$matcher = new RouteCache(__DIR__ . '/var/routes.php')->load(
+$matcher = new RouteCache(__DIR__ . '/var/routes-' . APP_VERSION . '.php', enabled: !APP_DEBUG)->load(
     static function (RouteSet $routes): void {
         $routes->add('/', ['handler' => 'home']);
         $routes->add('/api/users/{id}', ['handler' => 'users.show', 'middleware' => ['auth']]);
         $routes->add('/assets/{path+}', ['handler' => 'assets']);
     },
-    sources: [__FILE__], // recompile when this file changes
 );
 
-$match = $matcher->match('/api/users/42');
-$match->route;  // ['handler' => 'users.show', 'middleware' => ['auth']]
-$match->params; // ['id' => '42']
+$result = $matcher->match('/api/users/42');
+if ($result instanceof RouteMatch) {
+    $result->route;  // ['handler' => 'users.show', 'middleware' => ['auth']]
+    $result->params; // ['id' => '42']
+}
 ```
 
-- `match()` returns `null` when no route matches. It takes the path only (no query string), and
-  parameter values are `rawurldecode`d.
-- The callback passed to `load()` runs only when the cache file is missing or older than one of
-  the `sources`. On a warm request the routes are never declared at all, just `require`d.
+- `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
+  Parameter values are `rawurldecode`d.
 - Without a cache, use `new Matcher(Compiler::compile($routes))` directly.
-  `RouteCache::isFresh()`, `write()` and `read()` are public for custom cache handling.
 
 Metadata is written into the cache file, so it may only contain scalars, `null`, enums and arrays
 of those. Anything else is rejected at compile time.
 
+### Caching
+
+`RouteCache` works like FastRoute's cached dispatcher:
+
+- **The cache key is the cache file.** If it exists, it is used as is and the callback passed to
+  `load()` never runs. On a warm request the routes are not declared at all, just `require`d.
+- **Nothing is invalidated automatically.** Anything that changes which routes get compiled must
+  change the key: a deploy, or configuration that decides which routes exist. Put an application
+  version or a hash of that configuration into the key.
+- **`enabled: false` turns the cache off**, for development. Routes are then compiled on every
+  `load()`, and nothing is read or written.
+- **For custom cache handling**, `read()` and `write()` are public.
+
+### Several routes per path and guards
+
+Several routes may share a path, typically one per HTTP method. A *guard* passed to `match()`
+decides which of them applies:
+
+```php
+$routes->add('/users', ['methods' => ['GET'], 'handler' => 'users.list']);
+$routes->add('/users', ['methods' => ['POST'], 'handler' => 'users.create']);
+
+$result = $matcher->match($path, static fn(array $route, array $params): bool => in_array($method, $route['methods'], true));
+
+if ($result instanceof RouteMatch) {
+    // dispatch $result->route with $result->params
+} elseif ($result->rejected === []) {
+    // 404: no route has this path
+} else {
+    // 405: the path exists for other methods; build Allow from $result->rejected
+}
+```
+
+- **Candidates are offered in order.** The guard receives each candidate's metadata and decoded
+  parameters, in precedence order and, for routes sharing a path, in declaration order. The first
+  accepted route wins.
+- **A rejected route behaves as if it didn't exist.** Matching continues and may backtrack: with
+  `POST /foo/bar` and `GET /foo/{id}`, a `GET /foo/bar` matches the second route.
+- **Rejections are reported.** If nothing is accepted, `NoMatch::$rejected` lists the metadata of
+  every rejected candidate, which is what a 405 response needs.
+- **Without a guard**, the first declared route of the best path wins.
+
+Guards decide whether a route *applies to the request*: HTTP method, host, content type, parameter
+format (`{id}` must be numeric), a feature switch. They must not check *who is asking*.
+Authentication and permissions belong to middleware after matching, because a rejected route
+falls through to other routes (or a 404) instead of producing a 401 or 403. Guards may run several
+times per match, so keep them cheap and free of side effects: load any configuration once, before
+matching, and let the closure capture it.
 ## Path syntax
 
 | Segment    | Matches                                                                   |
@@ -63,9 +111,9 @@ of those. Anything else is rejected at compile time.
 
 ### Declaration rules (enforced at compile time)
 
-- No duplicate routes. `/foo/{id}` and `/foo/{name}` count as duplicates. Two different routes
-  may still share a parameter position under different names.
-- One catch-all per node.
+- Routes may share a path, also with different parameter names (`/foo/{id}` and `/foo/{name}`);
+  a guard chooses between them.
+- Catch-alls hanging off the same node must all be `{name*}` or all be `{name+}`.
 
 ## Building a higher-level API
 
@@ -124,7 +172,8 @@ RouteSet ──► TreeBuilder ──► Flattener ──► RouteCache (PHP fil
 - **Routes without parameters** are answered from a static table keyed by the full path, a single
   hash lookup.
 - **Everything else** goes through the tree. Each compiled node is a list `[static map, param
-  child, catch-all route, catch-all min, route]`, where `-1` means "none". The field positions
+  child, catch-all routes, catch-all min, routes]`, with route-ID lists in declaration order and
+  `-1` for "no param child". The field positions
   are named in `Internal\Layout`.
 - **A route's metadata and parameter names** live in a separate route table, so the traversal
   loop only deals with integers and segment strings.

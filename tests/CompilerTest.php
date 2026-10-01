@@ -45,26 +45,12 @@ final class CompilerTest extends TestCase
             static fn(RouteSet $r) => $r->add('/{path*}/edit', 'x'),
             'must be the last segment',
         ];
-        yield 'duplicate route' => [
-            static function (RouteSet $r): void {
-                $r->add('/users', 'a');
-                $r->add('/users', 'b');
-            },
-            'conflicts with route "/users"',
-        ];
-        yield 'same shape with different parameter names' => [
-            static function (RouteSet $r): void {
-                $r->add('/foo/{id}', 'a');
-                $r->add('/foo/{name}', 'b');
-            },
-            'conflicts with route "/foo/{id}"',
-        ];
-        yield 'two catch-alls on one node' => [
+        yield 'mixed catch-all kinds on one node' => [
             static function (RouteSet $r): void {
                 $r->add('/files/{a*}', 'a');
                 $r->add('/files/{b+}', 'b');
             },
-            'conflicts with catch-all route "/files/{a*}"',
+            'Catch-all route "/files/{b+}" conflicts with catch-all route "/files/{a*}"',
         ];
         yield 'object in route metadata' => [
             static fn(RouteSet $r) => $r->add('/users', ['handler' => new stdClass()]),
@@ -98,24 +84,27 @@ final class CompilerTest extends TestCase
         $routes->add('/api/health', 'health');
         $routes->add('/api/files/{path+}', 'files');
         $routes->add('/about', 'about');
+        $routes->add('/api/users', 'create-user');
+        $routes->add('/api/users/{name}', 'user-by-name');
 
         static::assertSame(
             [
-                'version' => 3,
-                // Parameterless routes are looked up by full path.
+                'version' => 4,
+                // Parameterless routes are looked up by full path; routes sharing a path keep
+                // declaration order.
                 'static' => [
-                    '/api/users' => 0,
-                    '/api/health' => 2,
-                    '/about' => 4,
+                    '/api/users' => [0, 5],
+                    '/api/health' => [2],
+                    '/about' => [4],
                 ],
                 // "/about" and "/api/health" are pruned from the tree; "/api/users" stays as the
-                // parent of {id}, but no longer carries a route.
+                // parent of {id}, but no longer carries a route. {id} and {name} share a node.
                 'nodes' => [
-                    [['api' => 1], -1, -1, 0, -1],
-                    [['users' => 2, 'files' => 3], -1, -1, 0, -1],
-                    [[], 4, -1, 0, -1],
-                    [[], -1, 3, 1, -1],
-                    [[], -1, -1, 0, 1],
+                    [['api' => 1], -1, [], 0, []],
+                    [['users' => 2, 'files' => 3], -1, [], 0, []],
+                    [[], 4, [], 0, []],
+                    [[], -1, [3], 1, []],
+                    [[], -1, [], 0, [1, 6]],
                 ],
                 'routes' => [
                     ['users', []],
@@ -123,6 +112,8 @@ final class CompilerTest extends TestCase
                     ['health', []],
                     ['files', ['path']],
                     ['about', []],
+                    ['create-user', []],
+                    ['user-by-name', ['name']],
                 ],
             ],
             Compiler::compile($routes),

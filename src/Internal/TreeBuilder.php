@@ -11,9 +11,10 @@ use function count;
 use function sprintf;
 
 /**
- * Builds the compiler's intermediate tree from route declarations and rejects conflicting routes.
+ * Builds the compiler's intermediate tree from route declarations.
  *
- * Groups do not appear in the tree: their metadata belongs to the routes declared inside them.
+ * Several routes may share a path; they are kept in declaration order and a match-time guard
+ * chooses between them. The only conflict left is mixing `{name*}` and `{name+}` on one node.
  *
  * @internal
  */
@@ -44,49 +45,24 @@ final class TreeBuilder
         $segments = $route->segments;
         $last = $segments[count($segments) - 1];
 
-        if ($last->type->isCatchAll()) {
-            self::insertCatchAllRoute($root, $route, $last, $index, $routes);
+        if (!$last->type->isCatchAll()) {
+            self::walk($root, $segments)->routes[] = $index;
 
             return;
         }
 
-        $node = self::walk($root, $segments);
-        if ($node->route !== null) {
+        // A catch-all is terminal, so it is stored on the node it hangs off instead of getting a node.
+        $node = self::walk($root, array_slice($segments, offset: 0, length: -1));
+        if ($node->catchType !== null && $node->catchType !== $last->type) {
             throw new InvalidRouteException(sprintf(
-                'Route "%s" conflicts with route "%s".',
+                'Catch-all route "%s" conflicts with catch-all route "%s"; routes sharing a catch-all must all use either {name*} or {name+}.',
                 $route->path,
-                $routes[$node->route]->path,
+                $routes[$node->catchRoutes[0]]->path,
             ));
         }
 
-        $node->route = $index;
-    }
-
-    /**
-     * A catch-all is terminal, so it is stored on the node it hangs off instead of getting a node.
-     *
-     * @param list<RouteDefinition> $routes
-     *
-     * @throws InvalidRouteException
-     */
-    private static function insertCatchAllRoute(
-        BuildNode $root,
-        RouteDefinition $route,
-        Segment $catchAll,
-        int $index,
-        array $routes,
-    ): void {
-        $node = self::walk($root, array_slice($route->segments, offset: 0, length: -1));
-        if ($node->catchRoute !== null) {
-            throw new InvalidRouteException(sprintf(
-                'Route "%s" conflicts with catch-all route "%s".',
-                $route->path,
-                $routes[$node->catchRoute]->path,
-            ));
-        }
-
-        $node->catchRoute = $index;
-        $node->catchType = $catchAll->type;
+        $node->catchRoutes[] = $index;
+        $node->catchType = $last->type;
     }
 
     /**

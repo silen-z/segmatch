@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace silenz\PhpRouter\Tests;
 
+use ArrayObject;
 use PHPUnit\Framework\TestCase;
 use silenz\PhpRouter\Compiler;
+use silenz\PhpRouter\NoMatch;
 use silenz\PhpRouter\RouteCache;
+use silenz\PhpRouter\RouteMatch;
 use silenz\PhpRouter\RouteSet;
 use silenz\PhpRouter\Tests\Fixtures\Method;
 
@@ -15,7 +18,6 @@ use function glob;
 use function is_dir;
 use function rmdir;
 use function sys_get_temp_dir;
-use function touch;
 use function uniqid;
 use function unlink;
 
@@ -58,9 +60,9 @@ final class RouteCacheTest extends TestCase
 
     public function testWrittenFileReproducesCompiledRoutes(): void
     {
-        $collector = new RouteSet();
-        self::define($collector);
-        $compiled = Compiler::compile($collector);
+        $routes = new RouteSet();
+        self::define($routes);
+        $compiled = Compiler::compile($routes);
 
         $cache = new RouteCache($this->directory . '/routes.php');
         $cache->write($compiled);
@@ -70,8 +72,7 @@ final class RouteCacheTest extends TestCase
 
     public function testLoadCompilesOnceAndThenReusesTheFile(): void
     {
-        $file = $this->directory . '/routes.php';
-        $cache = new RouteCache($file);
+        $cache = new RouteCache($this->directory . '/routes.php');
         $calls = 0;
         $define = static function (RouteSet $r) use (&$calls): void {
             $calls++;
@@ -83,26 +84,55 @@ final class RouteCacheTest extends TestCase
 
         static::assertSame(1, $calls);
         static::assertEquals($first->match('/api/users/5'), $second->match('/api/users/5'));
-        static::assertSame(['id' => '5'], $second->match('/api/users/5')?->params);
-        static::assertSame('numeric segment', $second->match('/api/123')?->route);
+        static::assertSame('numeric segment', self::route($second->match('/api/123')));
     }
 
-    public function testCacheIsStaleWhenASourceFileIsNewer(): void
+    public function testExistingCacheIsUsedEvenWhenTheDefinitionChanges(): void
     {
         $file = $this->directory . '/routes.php';
-        $source = $this->directory . '/source.php';
-        $cache = new RouteCache($file);
+        new RouteCache($file)->load(static fn(RouteSet $r) => $r->add('/old', 'old'));
 
-        $cache->load(self::define(...));
-        file_put_contents($source, data: '<?php');
-        touch($file, mtime: 1_000);
-        touch($source, mtime: 2_000);
+        $matcher = new RouteCache($file)->load(static fn(RouteSet $r) => $r->add('/new', 'new'));
 
-        static::assertFalse($cache->isFresh([$source]));
+        static::assertSame('old', self::route($matcher->match('/old')));
+        static::assertNull(self::route($matcher->match('/new')));
+    }
 
-        touch($file, mtime: 3_000);
-        static::assertTrue($cache->isFresh([$source]));
-        static::assertFalse($cache->isFresh([$this->directory . '/missing.php']));
+    public function testDifferentKeysKeepSeparateCaches(): void
+    {
+        $v1 = new RouteCache($this->directory . '/routes-v1.php')->load(static fn(RouteSet $r) => $r->add('/a', 'v1'));
+        $v2 = new RouteCache($this->directory . '/routes-v2.php')->load(static fn(RouteSet $r) => $r->add('/a', 'v2'));
+
+        static::assertSame('v1', self::route($v1->match('/a')));
+        static::assertSame('v2', self::route($v2->match('/a')));
+    }
+
+    public function testDisabledCacheCompilesEveryTimeAndWritesNothing(): void
+    {
+        $file = $this->directory . '/routes.php';
+        $cache = new RouteCache($file, enabled: false);
+        $counter = new ArrayObject();
+        $define = static function (RouteSet $r) use ($counter): void {
+            $counter->append(true);
+            $r->add('/a', 'a');
+        };
+
+        $cache->load($define);
+        $matcher = $cache->load($define);
+
+        static::assertCount(2, $counter);
+        static::assertSame('a', self::route($matcher->match('/a')));
+        static::assertFileDoesNotExist($file);
+    }
+
+    public function testDisabledCacheIgnoresAnExistingFile(): void
+    {
+        $file = $this->directory . '/routes.php';
+        new RouteCache($file)->load(static fn(RouteSet $r) => $r->add('/old', 'old'));
+
+        $matcher = new RouteCache($file, enabled: false)->load(static fn(RouteSet $r) => $r->add('/new', 'new'));
+
+        static::assertSame('new', self::route($matcher->match('/new')));
     }
 
     public function testIncompatibleFileIsIgnored(): void
@@ -113,6 +143,11 @@ final class RouteCacheTest extends TestCase
         file_put_contents($file, data: "<?php return ['version' => 0];");
 
         static::assertNull($cache->read());
-        static::assertSame('assets', $cache->load(self::define(...))->match('/assets/x')?->route);
+        static::assertSame('assets', self::route($cache->load(self::define(...))->match('/assets/x')));
+    }
+
+    private static function route(RouteMatch|NoMatch $result): mixed
+    {
+        return $result instanceof RouteMatch ? $result->route : null;
     }
 }
