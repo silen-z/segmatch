@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Benchmarks;
+namespace SilenZ\Segmatch\Benchmarks;
 
 use FastRoute\Dispatcher;
 use PhpBench\Attributes\BeforeMethods;
@@ -11,7 +11,7 @@ use PhpBench\Attributes\Iterations;
 use PhpBench\Attributes\ParamProviders;
 use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
-use silenz\PhpRouter\Matcher;
+use SilenZ\Segmatch\Matcher;
 
 use function count;
 

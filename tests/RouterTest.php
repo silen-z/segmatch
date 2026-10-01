@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests;
+namespace SilenZ\Segmatch\Tests;
 
 use ArrayObject;
 use PHPUnit\Framework\TestCase;
-use silenz\PhpRouter\Cache\RouteCache;
-use silenz\PhpRouter\Compiler;
-use silenz\PhpRouter\NoMatch;
-use silenz\PhpRouter\RouteMatch;
-use silenz\PhpRouter\Router;
-use silenz\PhpRouter\RouteSet;
+use SilenZ\Segmatch\Cache\RouteCache;
+use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\NoMatch;
+use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteSet;
 
 final class RouterTest extends TestCase
 {

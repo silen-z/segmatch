@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Cache;
+namespace SilenZ\Segmatch\Cache;
 
-use silenz\PhpRouter\Compiler;
+use SilenZ\Segmatch\Compiler;
 
 /**
  * Storage for compiled routes, addressed by a cache key.
  *
- * Implementations only store and return the data. {@see \silenz\PhpRouter\Router} decides when to
+ * Implementations only store and return the data. {@see \SilenZ\Segmatch\Router} decides when to
  * compile and rejects entries written by an incompatible version of the router.
  *
  * @psalm-import-type CompiledRoutes from Compiler

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter;
+namespace SilenZ\Segmatch;
 
-use silenz\PhpRouter\Exception\InvalidRouteException;
-use silenz\PhpRouter\Internal\Flattener;
-use silenz\PhpRouter\Internal\TreeBuilder;
+use SilenZ\Segmatch\Exception\InvalidRouteException;
+use SilenZ\Segmatch\Internal\Flattener;
+use SilenZ\Segmatch\Internal\TreeBuilder;
 use UnitEnum;
 
 use function get_debug_type;

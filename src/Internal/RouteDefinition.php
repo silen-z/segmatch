@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Internal;
+namespace SilenZ\Segmatch\Internal;
 
 /**
  * @internal

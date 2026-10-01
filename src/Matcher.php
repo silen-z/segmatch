@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter;
+namespace SilenZ\Segmatch;
 
 use Closure;
 use InvalidArgumentException;
-use silenz\PhpRouter\Internal\Layout;
+use SilenZ\Segmatch\Internal\Layout;
 
 use function array_pop;
 use function array_slice;

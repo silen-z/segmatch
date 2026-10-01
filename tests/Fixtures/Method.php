@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests\Fixtures;
+namespace SilenZ\Segmatch\Tests\Fixtures;
 
 enum Method: string
 {

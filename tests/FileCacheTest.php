@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests;
+namespace SilenZ\Segmatch\Tests;
 
 use LogicException;
 use PHPUnit\Framework\TestCase;
-use silenz\PhpRouter\Cache\FileCache;
-use silenz\PhpRouter\Compiler;
-use silenz\PhpRouter\RouteMatch;
-use silenz\PhpRouter\Router;
-use silenz\PhpRouter\RouteSet;
-use silenz\PhpRouter\Tests\Fixtures\Method;
+use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteSet;
+use SilenZ\Segmatch\Tests\Fixtures\Method;
 
 use function basename;
 use function dirname;
@@ -29,7 +29,7 @@ final class FileCacheTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->directory = sys_get_temp_dir() . '/php-router-' . uniqid() . '/cache';
+        $this->directory = sys_get_temp_dir() . '/segmatch-' . uniqid() . '/cache';
     }
 
     protected function tearDown(): void

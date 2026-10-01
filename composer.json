@@ -1,18 +1,18 @@
 {
-    "name": "phrach/php-router",
+    "name": "silenz/segmatch",
     "description": "Segment-tree PHP router compiled into a flat, cacheable node table.",
     "type": "library",
     "version": "0.1.0",
     "license": "proprietary",
     "autoload": {
         "psr-4": {
-            "silenz\\PhpRouter\\": "src/"
+            "SilenZ\\Segmatch\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "silenz\\PhpRouter\\Tests\\": "tests/",
-            "silenz\\PhpRouter\\Benchmarks\\": "benchmarks/"
+            "SilenZ\\Segmatch\\Tests\\": "tests/",
+            "SilenZ\\Segmatch\\Benchmarks\\": "benchmarks/"
         }
     },
     "authors": [

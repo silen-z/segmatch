@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Benchmarks;
+namespace SilenZ\Segmatch\Benchmarks;
 
 use FastRoute\Dispatcher;
 use FastRoute\RouteCollector as FastRouteCollector;
 use LogicException;
-use silenz\PhpRouter\Cache\FileCache;
-use silenz\PhpRouter\Compiler;
-use silenz\PhpRouter\Matcher;
-use silenz\PhpRouter\Router;
-use silenz\PhpRouter\RouteSet;
+use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\Matcher;
+use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteSet;
 
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;

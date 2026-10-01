@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests;
+namespace SilenZ\Segmatch\Tests;
 
 use FastRoute\Dispatcher;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use silenz\PhpRouter\Benchmarks\Fixtures;
-use silenz\PhpRouter\Benchmarks\Routers;
-use silenz\PhpRouter\Matcher;
-use silenz\PhpRouter\NoMatch;
-use silenz\PhpRouter\RouteMatch;
+use SilenZ\Segmatch\Benchmarks\Fixtures;
+use SilenZ\Segmatch\Benchmarks\Routers;
+use SilenZ\Segmatch\Matcher;
+use SilenZ\Segmatch\NoMatch;
+use SilenZ\Segmatch\RouteMatch;
 
 use function array_filter;
 use function array_key_exists;

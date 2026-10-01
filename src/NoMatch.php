@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter;
+namespace SilenZ\Segmatch;
 
 /**
  * Result of a {@see Matcher::match()} that found no acceptable route.

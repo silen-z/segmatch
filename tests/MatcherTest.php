@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests;
+namespace SilenZ\Segmatch\Tests;
 
 use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use silenz\PhpRouter\Compiler;
-use silenz\PhpRouter\Matcher;
-use silenz\PhpRouter\RouteMatch;
-use silenz\PhpRouter\RouteSet;
+use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\Matcher;
+use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\RouteSet;
 
 use function sprintf;
 

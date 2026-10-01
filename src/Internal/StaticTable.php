@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Internal;
+namespace SilenZ\Segmatch\Internal;
 
 /**
  * Moves routes without parameters out of the tree into a table keyed by the full path, so the

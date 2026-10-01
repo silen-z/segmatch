@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Benchmarks;
+namespace SilenZ\Segmatch\Benchmarks;
 
 use FastRoute\RouteCollector as FastRouteCollector;
 use PhpBench\Attributes\BeforeMethods;

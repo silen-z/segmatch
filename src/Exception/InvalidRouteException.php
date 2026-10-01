@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Exception;
+namespace SilenZ\Segmatch\Exception;
 
 use InvalidArgumentException;
 

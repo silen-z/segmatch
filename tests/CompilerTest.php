@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests;
+namespace SilenZ\Segmatch\Tests;
 
 use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use silenz\PhpRouter\Compiler;
-use silenz\PhpRouter\Exception\InvalidRouteException;
-use silenz\PhpRouter\RouteSet;
+use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\Exception\InvalidRouteException;
+use SilenZ\Segmatch\RouteSet;
 use stdClass;
 
 use function preg_quote;

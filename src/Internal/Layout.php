@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Internal;
+namespace SilenZ\Segmatch\Internal;
 
 /**
  * The compiled runtime structure, shared by the compiler and the matcher.

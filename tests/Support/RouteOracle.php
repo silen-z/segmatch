@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Tests\Support;
+namespace SilenZ\Segmatch\Tests\Support;
 
 use Closure;
 

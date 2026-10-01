@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Internal;
+namespace SilenZ\Segmatch\Internal;
 
-use silenz\PhpRouter\Compiler;
+use SilenZ\Segmatch\Compiler;
 
 use function count;
 use function spl_object_id;

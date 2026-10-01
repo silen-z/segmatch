@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter;
+namespace SilenZ\Segmatch;
 
 use Closure;
-use silenz\PhpRouter\Cache\RouteCache;
-use silenz\PhpRouter\Internal\Layout;
+use SilenZ\Segmatch\Cache\RouteCache;
+use SilenZ\Segmatch\Internal\Layout;
 
 /**
  * Entry point: declares the routes lazily, caches them and matches paths.

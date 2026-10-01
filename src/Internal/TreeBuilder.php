@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Internal;
+namespace SilenZ\Segmatch\Internal;
 
-use silenz\PhpRouter\Exception\InvalidRouteException;
+use SilenZ\Segmatch\Exception\InvalidRouteException;
 
 use function array_slice;
 use function count;

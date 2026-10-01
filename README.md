@@ -1,4 +1,4 @@
-# php-router
+# Segmatch
 
 A segment-tree router for PHP 8.4. Route declarations are compiled into a flat table of integer
 node IDs, which is stored as a plain `return [...]` PHP file and matched by one generic loop.
@@ -14,10 +14,10 @@ This package is deliberately a small core: full paths in, metadata out. Prefixes
 ## Usage
 
 ```php
-use silenz\PhpRouter\Cache\FileCache;
-use silenz\PhpRouter\RouteMatch;
-use silenz\PhpRouter\Router;
-use silenz\PhpRouter\RouteSet;
+use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteSet;
 
 $router = new Router(
     static function (RouteSet $routes): void {

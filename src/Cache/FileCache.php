@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace silenz\PhpRouter\Cache;
+namespace SilenZ\Segmatch\Cache;
 
 use Closure;
 use RuntimeException;
-use silenz\PhpRouter\Internal\Exporter;
+use SilenZ\Segmatch\Internal\Exporter;
 
 use function bin2hex;
 use function file_put_contents;
