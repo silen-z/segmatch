@@ -15,24 +15,31 @@ use PhpBench\Attributes\Warmup;
 use silenz\PhpRouter\Matcher;
 use silenz\PhpRouter\RouteCache;
 
+use function count;
 use function FastRoute\cachedDispatcher;
 
 /**
- * Warm start: turning an existing cache file into a ready matcher, i.e. the per-request cost in
- * production. Without OPcache this is dominated by parsing the file; with OPcache it is mostly the
- * cost of `require` returning the immutable array.
+ * One cold request as under PHP-FPM: load the router from its cache file, then match one path.
+ * Each rev takes the next path of {@see Fixtures::paths()}.
  */
-#[Groups(['load'])]
+#[Groups(['load-match'])]
 #[BeforeMethods('setUp')]
 #[ParamProviders('provideFixtures')]
-#[Revs(200)]
+#[Revs(100)]
 #[Iterations(5)]
 #[Warmup(1)]
-final class LoadBench
+final class LoadMatchBench
 {
     private string $flatFile = '';
 
     private string $fastRouteFile = '';
+
+    /** @var non-empty-list<string> */
+    private array $paths = [''];
+
+    private int $count = 1;
+
+    private int $next = 0;
 
     /**
      * @param array{fixture: string} $params
@@ -40,19 +47,24 @@ final class LoadBench
     public function setUp(array $params): void
     {
         [$this->flatFile, $this->fastRouteFile] = Routers::writeCaches($params['fixture']);
+        $this->paths = Fixtures::paths($params['fixture']);
+        $this->count = count($this->paths);
+        $this->next = 0;
     }
 
     public function benchFlat(): void
     {
-        new Matcher(new RouteCache($this->flatFile)->read() ?? throw new LogicException('Cache file missing.'));
+        $compiled = new RouteCache($this->flatFile)->read() ?? throw new LogicException('Cache file missing.');
+        new Matcher($compiled)->match($this->paths[$this->next++ % $this->count]);
     }
 
     public function benchFastRoute(): void
     {
         // The definition callback is never invoked while the cache file exists.
-        cachedDispatcher(static function (FastRouteCollector $_collector): void {}, [
+        $dispatcher = cachedDispatcher(static function (FastRouteCollector $_collector): void {}, [
             'cacheFile' => $this->fastRouteFile,
         ]);
+        $dispatcher->dispatch('GET', $this->paths[$this->next++ % $this->count]);
     }
 
     /**

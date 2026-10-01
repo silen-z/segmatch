@@ -9,7 +9,6 @@ use PhpBench\Attributes\BeforeMethods;
 use PhpBench\Attributes\Groups;
 use PhpBench\Attributes\Iterations;
 use PhpBench\Attributes\ParamProviders;
-use PhpBench\Attributes\RetryThreshold;
 use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 use silenz\PhpRouter\Matcher;
@@ -23,10 +22,9 @@ use silenz\PhpRouter\Matcher;
 #[Groups(['match'])]
 #[BeforeMethods('setUp')]
 #[ParamProviders('provideRequests')]
-#[Revs(2000)]
+#[Revs(20_000)]
 #[Iterations(10)]
 #[Warmup(2)]
-#[RetryThreshold(5)]
 final class MatchBench
 {
     private Matcher $flat;

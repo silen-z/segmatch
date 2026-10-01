@@ -8,13 +8,16 @@ use FastRoute\Dispatcher;
 use FastRoute\RouteCollector as FastRouteCollector;
 use silenz\PhpRouter\Compiler;
 use silenz\PhpRouter\Matcher;
+use silenz\PhpRouter\RouteCache;
 use silenz\PhpRouter\RouteCollector;
 
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
+use function is_file;
 use function preg_match;
 use function preg_replace;
 use function str_contains;
+use function unlink;
 use function usort;
 
 /**
@@ -42,6 +45,29 @@ final class Routers
     public static function flat(array $routes): Matcher
     {
         return new Matcher(Compiler::compile(self::flatCollector($routes)));
+    }
+
+    /**
+     * Writes fresh cache files of both routers for a fixture.
+     *
+     * @return array{string, string} paths of this router's and FastRoute's cache file
+     */
+    public static function writeCaches(string $fixture): array
+    {
+        $routes = Fixtures::get($fixture)['routes'];
+        $directory = __DIR__ . '/../var/bench-cache/';
+        $flatFile = $directory . $fixture . '.flat.php';
+        $fastRouteFile = $directory . $fixture . '.fast-route.php';
+
+        new RouteCache($flatFile)->write(Compiler::compile(self::flatCollector($routes)));
+
+        // FastRoute only writes its cache when the file does not exist yet.
+        if (is_file($fastRouteFile)) {
+            unlink($fastRouteFile);
+        }
+        self::fastRoute($routes, $fastRouteFile);
+
+        return [$flatFile, $fastRouteFile];
     }
 
     /**
