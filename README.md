@@ -150,7 +150,7 @@ $router = new Router(
             });
 
             $r->group()->middleware('auth')->define(static function (Routes $r): void {
-                $r->get('/users/{id}', [UserController::class, 'show'])->name('users.show')->where('id', '\d+');
+                $r->get('/users/{id}', [UserController::class, 'show'])->name('users.show');
                 $r->put('/users/{id}', [UserController::class, 'update']);
 
                 $r->group('/admin')->middleware('admin')->define(static function (Routes $r): void {
@@ -166,8 +166,8 @@ $router = new Router(
 
 - **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
   route for one method; `map()` for several; `any()` for every method.
-- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
-  `->where()` (a regex for one parameter, without delimiters or anchors) and `->guard()`.
+- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()` and
+  `->guard()`.
 - **Groups:** `group()` takes an optional prefix, and `->middleware()` and `->define()` may be
   called in any order. Groups with no prefix only add middleware. Groups may share a prefix or
   nest freely, and a route only gets middleware from the groups it's declared in.
@@ -179,12 +179,15 @@ $router = new Router(
 - **Handlers and middleware are stored in the cache,** so they must be plain data: class names,
   `[Class::class, 'method']` arrays, strings, enums. Not closures.
 
-### Guards: methods, patterns and your own conditions
+### Guards: methods and your own conditions
 
 A route's conditions are stored with it as *guards*:
 - its HTTP methods become a `MethodGuard` (`any()` routes get none),
-- `where()` constraints become a `PatternGuard`,
 - `->guard(MyGuard::class, $config)` adds your own.
+
+There's deliberately no built-in parameter validation such as regex constraints: check parameter
+values in the controller. If a route really must be skipped for some values, so that another
+route can take the request, write a guard for it.
 
 Match with `Guards::for()`, which runs every candidate route's guards against the request:
 
@@ -206,10 +209,10 @@ if ($result instanceof RouteMatch) {
 ```
 
 - **A rejected route doesn't exist for that request.** Matching continues, so a request falls
-  through to another route: `GET /users/john` skips `GET /users/{id}` with `where('id', '\d+')`
-  and reaches `GET /users/{slug}`.
+  through to another route: `GET /users/new` skips `POST /users/new` and reaches
+  `GET /users/{id}`.
 - **`allowedMethods()` counts only routes rejected solely because of their method.** A route
-  whose pattern or feature switch fails doesn't make a 405.
+  whose own guard fails, such as a feature switch, doesn't make a 405.
 - **A custom guard implements `Http\Guard`:** one static method,
   `accepts(mixed $config, Request $request, array $params): bool`. The route stores only the
   class name and the configuration, so both must be cacheable plain data. Anything request-specific
@@ -226,14 +229,13 @@ Each route's metadata, as returned in `RouteMatch::$route`:
     'name' => 'users.show',                      // only when named
     'guards' => [                                // only when there are any, checked in this order
         MethodGuard::class => ['GET'],
-        PatternGuard::class => ['id' => '\d+'],
+        FeatureGuard::class => 'beta',            // a guard of your own
     ],
 ]
 ```
 
-Compile-time errors include duplicate route names, invalid prefixes or methods, invalid `where()`
-patterns, `where()` on a parameter the path doesn't have, and guard classes that don't implement
-`Http\Guard`.
+Compile-time errors include duplicate route names, invalid prefixes or methods, and guard classes
+that don't implement `Http\Guard`.
 ## Architecture
 
 ```
