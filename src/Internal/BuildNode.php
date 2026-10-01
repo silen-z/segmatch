@@ -23,7 +23,4 @@ final class BuildNode
 
     /** Index of the route terminating at this node. */
     public ?int $route = null;
-
-    /** Index of the group whose prefix ends at this node. */
-    public ?int $group = null;
 }

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace silenz\PhpRouter\Internal;
 
-use silenz\PhpRouter\Compiler;
-
 /**
  * Moves routes without parameters out of the tree into a table keyed by the full path, so the
  * matcher answers them with one hash lookup.
@@ -16,8 +14,6 @@ use silenz\PhpRouter\Compiler;
  * that only existed for these routes are pruned afterwards.
  *
  * @internal
- *
- * @psalm-import-type CompiledStatic from Compiler
  */
 final class StaticTable
 {
@@ -25,11 +21,10 @@ final class StaticTable
      * Mutates the tree: extracted routes are removed from it and empty subtrees are pruned.
      *
      * @param list<RouteDefinition> $routes
-     * @param array<int, int> $scopeIds group index => scope id
      *
-     * @return array<array-key, CompiledStatic>
+     * @return array<array-key, int> full path => route id
      */
-    public static function extract(BuildNode $root, array $routes, array $scopeIds): array
+    public static function extract(BuildNode $root, array $routes): array
     {
         $static = [];
         /** @var array<int, true> $extracted */
@@ -39,19 +34,7 @@ final class StaticTable
                 continue;
             }
 
-            // Ownership validation guarantees the declared groups are exactly the groups on the path.
-            $scopes = [];
-            foreach ($route->groups as $group) {
-                $scope = $scopeIds[$group] ?? null;
-                if ($scope !== null) {
-                    $scopes[] = $scope;
-                }
-            }
-
-            $static[$route->path] = [
-                Layout::STATIC_ROUTE => $index,
-                Layout::STATIC_SCOPES => $scopes,
-            ];
+            $static[$route->path] = $index;
             $extracted[$index] = true;
         }
 

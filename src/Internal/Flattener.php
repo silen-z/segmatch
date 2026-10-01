@@ -22,44 +22,28 @@ final class Flattener
 {
     /**
      * @param list<RouteDefinition> $routes
-     * @param list<GroupDefinition> $groups
      *
      * @return CompiledRoutes
      */
-    public static function flatten(BuildNode $root, array $routes, array $groups): array
+    public static function flatten(BuildNode $root, array $routes): array
     {
-        /** @var array<int, int> $scopeIds group index => scope id */
-        $scopeIds = [];
-        $compiledGroups = [];
-        foreach ($groups as $index => $group) {
-            if ($group->metadata === null) {
-                continue;
-            }
-
-            $scopeIds[$index] = count($compiledGroups);
-            $compiledGroups[] = $group->metadata;
-        }
-
         // Must run before node ids are assigned: it prunes the tree.
-        $static = StaticTable::extract($root, $routes, $scopeIds);
+        $static = StaticTable::extract($root, $routes);
 
         return [
             'version' => Layout::FORMAT_VERSION,
             'static' => $static,
-            'nodes' => self::nodes($root, $scopeIds),
+            'nodes' => self::nodes($root),
             'routes' => self::routes($routes),
-            'groups' => $compiledGroups,
         ];
     }
 
     /**
      * Assigns node ids breadth-first (root = 0) and emits one compiled node per id.
      *
-     * @param array<int, int> $scopeIds
-     *
      * @return list<CompiledNode>
      */
-    private static function nodes(BuildNode $root, array $scopeIds): array
+    private static function nodes(BuildNode $root): array
     {
         $queue = [$root];
         $ids = [spl_object_id($root) => 0];
@@ -90,7 +74,6 @@ final class Flattener
                 Layout::NODE_CATCH => $node->catchRoute ?? Layout::NONE,
                 Layout::NODE_CATCH_MIN => $node->catchType === SegmentType::CatchAllOne ? 1 : 0,
                 Layout::NODE_ROUTE => $node->route ?? Layout::NONE,
-                Layout::NODE_SCOPE => $node->group !== null ? $scopeIds[$node->group] ?? Layout::NONE : Layout::NONE,
             ];
         }
 

@@ -53,7 +53,6 @@ final class Exporter
             ...$nodes,
             '    ],',
             "    'routes' => " . self::pretty($compiled['routes'], 1) . ',',
-            "    'groups' => " . self::pretty($compiled['groups'], 1) . ',',
             '];',
             '',
         ]);

@@ -25,7 +25,6 @@ use function substr;
  * @psalm-import-type CompiledNode from Compiler
  * @psalm-import-type CompiledRoute from Compiler
  * @psalm-import-type CompiledRoutes from Compiler
- * @psalm-import-type CompiledStatic from Compiler
  */
 final readonly class Matcher
 {
@@ -36,7 +35,7 @@ final readonly class Matcher
     private const int CATCH = 3;
     private const int EXHAUSTED = 4;
 
-    /** @var array<array-key, CompiledStatic> full path => route, for routes without parameters */
+    /** @var array<array-key, int> full path => route id, for routes without parameters */
     private array $static;
 
     /** @var list<CompiledNode> */
@@ -44,9 +43,6 @@ final readonly class Matcher
 
     /** @var list<CompiledRoute> */
     private array $routes;
-
-    /** @var list<mixed> */
-    private array $groups;
 
     /**
      * @param CompiledRoutes $compiled output of {@see Compiler::compile()}
@@ -64,7 +60,6 @@ final readonly class Matcher
         $this->static = $compiled['static'];
         $this->nodes = $compiled['nodes'];
         $this->routes = $compiled['routes'];
-        $this->groups = $compiled['groups'];
     }
 
     /**
@@ -73,14 +68,9 @@ final readonly class Matcher
     public function match(string $path): ?RouteMatch
     {
         // Routes without parameters are answered by a single hash lookup.
-        $static = $this->static[$path] ?? null;
-        if ($static !== null) {
-            $groups = [];
-            foreach ($static[Layout::STATIC_SCOPES] as $scope) {
-                $groups[] = $this->groups[$scope];
-            }
-
-            return new RouteMatch($this->routes[$static[Layout::STATIC_ROUTE]][Layout::ROUTE_METADATA], $groups, []);
+        $static = $this->static[$path] ?? Layout::NONE;
+        if ($static !== Layout::NONE) {
+            return new RouteMatch($this->routes[$static][Layout::ROUTE_METADATA], []);
         }
 
         if ($path === '' || $path[0] !== '/') {
@@ -94,10 +84,7 @@ final readonly class Matcher
         /** @var array<int, string> $values parameter values by slot; slots past $paramCount are stale */
         $values = [];
         $paramCount = 0;
-        /** @var array<int, int> $scopes group ids by depth; entries past $scopeCount are stale */
-        $scopes = [];
-        $scopeCount = 0;
-        /** @var list<array{int, int, int, int, int}> $stack node, segment index, next stage, param count, scope count */
+        /** @var list<array{int, int, int, int}> $stack node, segment index, next stage, param count */
         $stack = [];
 
         $node = 0;
@@ -108,23 +95,18 @@ final readonly class Matcher
             $current = $nodes[$node];
 
             if ($stage === self::ENTER) {
-                $scope = $current[Layout::NODE_SCOPE];
-                if ($scope !== Layout::NONE) {
-                    $scopes[$scopeCount++] = $scope;
-                }
-
                 $stage = self::STATIC;
                 if ($index === $count) {
                     $route = $current[Layout::NODE_ROUTE];
                     if ($route !== Layout::NONE) {
-                        return $this->result($route, $values, $scopes, $scopeCount);
+                        return $this->result($route, $values);
                     }
 
                     $catch = $current[Layout::NODE_CATCH];
                     if ($catch !== Layout::NONE && $current[Layout::NODE_CATCH_MIN] === 0) {
                         $values[$paramCount] = '';
 
-                        return $this->result($catch, $values, $scopes, $scopeCount);
+                        return $this->result($catch, $values);
                     }
 
                     $stage = self::EXHAUSTED;
@@ -138,7 +120,7 @@ final readonly class Matcher
                         $current[Layout::NODE_PARAM] !== Layout::NONE
                         || $current[Layout::NODE_CATCH] !== Layout::NONE
                     ) {
-                        $stack[] = [$node, $index, self::PARAM, $paramCount, $scopeCount];
+                        $stack[] = [$node, $index, self::PARAM, $paramCount];
                     }
 
                     $node = $child;
@@ -155,7 +137,7 @@ final readonly class Matcher
                 $segment = $segments[$index];
                 if ($param !== Layout::NONE && $segment !== '') {
                     if ($current[Layout::NODE_CATCH] !== Layout::NONE) {
-                        $stack[] = [$node, $index, self::CATCH, $paramCount, $scopeCount];
+                        $stack[] = [$node, $index, self::CATCH, $paramCount];
                     }
 
                     $values[$paramCount++] = $segment;
@@ -175,7 +157,7 @@ final readonly class Matcher
                     if ($rest !== '' || $current[Layout::NODE_CATCH_MIN] === 0) {
                         $values[$paramCount] = $rest;
 
-                        return $this->result($catch, $values, $scopes, $scopeCount);
+                        return $this->result($catch, $values);
                     }
                 }
             }
@@ -185,15 +167,14 @@ final readonly class Matcher
                 return null;
             }
 
-            [$node, $index, $stage, $paramCount, $scopeCount] = $frame;
+            [$node, $index, $stage, $paramCount] = $frame;
         }
     }
 
     /**
      * @param array<int, string> $values
-     * @param array<int, int> $scopes
      */
-    private function result(int $routeId, array $values, array $scopes, int $scopeCount): RouteMatch
+    private function result(int $routeId, array $values): RouteMatch
     {
         $route = $this->routes[$routeId];
 
@@ -202,11 +183,6 @@ final readonly class Matcher
             $params[$name] = rawurldecode($values[$position]);
         }
 
-        $groups = [];
-        for ($i = 0; $i < $scopeCount; $i++) {
-            $groups[] = $this->groups[$scopes[$i]];
-        }
-
-        return new RouteMatch($route[Layout::ROUTE_METADATA], $groups, $params);
+        return new RouteMatch($route[Layout::ROUTE_METADATA], $params);
     }
 }

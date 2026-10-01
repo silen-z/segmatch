@@ -20,10 +20,9 @@ use function sprintf;
  * The output is plain data: it can be passed to the matcher directly or written to a PHP file
  * by {@see RouteCache} and loaded back with `require`.
  *
- * @psalm-type CompiledNode = array{0: array<array-key, int>, 1: int, 2: int, 3: int, 4: int, 5: int}
+ * @psalm-type CompiledNode = array{0: array<array-key, int>, 1: int, 2: int, 3: int, 4: int}
  * @psalm-type CompiledRoute = array{0: mixed, 1: list<string>}
- * @psalm-type CompiledStatic = array{0: int, 1: list<int>}
- * @psalm-type CompiledRoutes = array{version: int, static: array<array-key, CompiledStatic>, nodes: list<CompiledNode>, routes: list<CompiledRoute>, groups: list<mixed>}
+ * @psalm-type CompiledRoutes = array{version: int, static: array<array-key, int>, nodes: list<CompiledNode>, routes: list<CompiledRoute>}
  */
 final class Compiler
 {
@@ -32,20 +31,15 @@ final class Compiler
      *
      * @throws InvalidRouteException
      */
-    public static function compile(RouteCollector $collector): array
+    public static function compile(RouteSet $routeSet): array
     {
-        $groups = $collector->groups();
-        $routes = $collector->routes();
-
-        foreach ($groups as $group) {
-            self::assertExportable($group->metadata, sprintf('group "%s"', $group->prefix));
-        }
+        $routes = $routeSet->routes();
 
         foreach ($routes as $route) {
             self::assertExportable($route->metadata, sprintf('route "%s"', $route->path));
         }
 
-        return Flattener::flatten(TreeBuilder::build($routes, $groups), $routes, $groups);
+        return Flattener::flatten(TreeBuilder::build($routes), $routes);
     }
 
     /**

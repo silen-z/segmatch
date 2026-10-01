@@ -9,7 +9,7 @@ use FastRoute\RouteCollector as FastRouteCollector;
 use silenz\PhpRouter\Compiler;
 use silenz\PhpRouter\Matcher;
 use silenz\PhpRouter\RouteCache;
-use silenz\PhpRouter\RouteCollector;
+use silenz\PhpRouter\RouteSet;
 
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
@@ -29,14 +29,14 @@ final class Routers
     /**
      * @param list<string> $routes
      */
-    public static function flatCollector(array $routes): RouteCollector
+    public static function flatRouteSet(array $routes): RouteSet
     {
-        $collector = new RouteCollector();
+        $set = new RouteSet();
         foreach ($routes as $index => $route) {
-            $collector->add($route, $index);
+            $set->add($route, $index);
         }
 
-        return $collector;
+        return $set;
     }
 
     /**
@@ -44,7 +44,7 @@ final class Routers
      */
     public static function flat(array $routes): Matcher
     {
-        return new Matcher(Compiler::compile(self::flatCollector($routes)));
+        return new Matcher(Compiler::compile(self::flatRouteSet($routes)));
     }
 
     /**
@@ -59,7 +59,7 @@ final class Routers
         $flatFile = $directory . $fixture . '.flat.php';
         $fastRouteFile = $directory . $fixture . '.fast-route.php';
 
-        new RouteCache($flatFile)->write(Compiler::compile(self::flatCollector($routes)));
+        new RouteCache($flatFile)->write(Compiler::compile(self::flatRouteSet($routes)));
 
         // FastRoute only writes its cache when the file does not exist yet.
         if (is_file($fastRouteFile)) {

@@ -15,21 +15,23 @@ namespace silenz\PhpRouter\Internal;
  *         NODE_CATCH     => 7,   // route id of the catch-all edge, or NONE
  *         NODE_CATCH_MIN => 0,   // 0 for {name*}, 1 for {name+}
  *         NODE_ROUTE     => 42,  // route id terminating at this node, or NONE
- *         NODE_SCOPE     => 1,   // group metadata id attached to this node, or NONE
  *     ]
  *
- * Routes without any parameter bypass the tree entirely through the static table:
+ * A compiled route is a list:
  *
- *     '/api/users' => [
- *         STATIC_ROUTE  => 2,      // route id
- *         STATIC_SCOPES => [0],    // group metadata ids along the path, outermost first
+ *     [
+ *         ROUTE_METADATA => [...],     // the route's metadata, untouched
+ *         ROUTE_PARAMS   => ['id'],    // parameter names in capture order
  *     ]
+ *
+ * Routes without any parameter bypass the tree entirely through the static table, which maps the
+ * full path to the route id.
  *
  * @internal
  */
 final class Layout
 {
-    public const int FORMAT_VERSION = 2;
+    public const int FORMAT_VERSION = 3;
 
     public const int NONE = -1;
 
@@ -38,11 +40,7 @@ final class Layout
     public const int NODE_CATCH = 2;
     public const int NODE_CATCH_MIN = 3;
     public const int NODE_ROUTE = 4;
-    public const int NODE_SCOPE = 5;
 
     public const int ROUTE_METADATA = 0;
     public const int ROUTE_PARAMS = 1;
-
-    public const int STATIC_ROUTE = 0;
-    public const int STATIC_SCOPES = 1;
 }

@@ -45,16 +45,16 @@ final readonly class RouteCache
     /**
      * Returns a matcher from the cache, recompiling it first when it is stale.
      *
-     * @param Closure(RouteCollector): void $define declares the routes
+     * @param Closure(RouteSet): void $define declares the routes
      * @param list<string> $sources files whose modification invalidates the cache (e.g. the route definitions)
      */
     public function load(Closure $define, array $sources = []): Matcher
     {
         $compiled = $this->isFresh($sources) ? $this->read() : null;
         if ($compiled === null) {
-            $collector = new RouteCollector();
-            $define($collector);
-            $compiled = Compiler::compile($collector);
+            $routes = new RouteSet();
+            $define($routes);
+            $compiled = Compiler::compile($routes);
             $this->write($compiled);
         }
 

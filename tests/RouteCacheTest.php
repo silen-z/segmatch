@@ -7,7 +7,7 @@ namespace silenz\PhpRouter\Tests;
 use PHPUnit\Framework\TestCase;
 use silenz\PhpRouter\Compiler;
 use silenz\PhpRouter\RouteCache;
-use silenz\PhpRouter\RouteCollector;
+use silenz\PhpRouter\RouteSet;
 use silenz\PhpRouter\Tests\Fixtures\Method;
 
 use function file_put_contents;
@@ -41,29 +41,24 @@ final class RouteCacheTest extends TestCase
         rmdir($this->directory);
     }
 
-    private static function define(RouteCollector $r): void
+    private static function define(RouteSet $r): void
     {
-        $r->group(
-            '/api',
-            static function (RouteCollector $r): void {
-                $r->add('/users/{id}', [
-                    'methods' => [Method::Get, Method::Put],
-                    'handler' => ['UserController', 'show'],
-                    'weight' => 1.5,
-                    'public' => false,
-                    'extra' => null,
-                    "quote'd" => "it's",
-                ]);
-                $r->add('/123', 'numeric segment');
-            },
-            ['middleware' => ['auth']],
-        );
+        $r->add('/api/users/{id}', [
+            'methods' => [Method::Get, Method::Put],
+            'handler' => ['UserController', 'show'],
+            'middleware' => ['auth'],
+            'weight' => 1.5,
+            'public' => false,
+            'extra' => null,
+            "quote'd" => "it's",
+        ]);
+        $r->add('/api/123', 'numeric segment');
         $r->add('/assets/{path*}', 'assets');
     }
 
     public function testWrittenFileReproducesCompiledRoutes(): void
     {
-        $collector = new RouteCollector();
+        $collector = new RouteSet();
         self::define($collector);
         $compiled = Compiler::compile($collector);
 
@@ -78,7 +73,7 @@ final class RouteCacheTest extends TestCase
         $file = $this->directory . '/routes.php';
         $cache = new RouteCache($file);
         $calls = 0;
-        $define = static function (RouteCollector $r) use (&$calls): void {
+        $define = static function (RouteSet $r) use (&$calls): void {
             $calls++;
             self::define($r);
         };
@@ -88,7 +83,7 @@ final class RouteCacheTest extends TestCase
 
         static::assertSame(1, $calls);
         static::assertEquals($first->match('/api/users/5'), $second->match('/api/users/5'));
-        static::assertSame(['middleware' => ['auth']], $second->match('/api/users/5')?->groups[0]);
+        static::assertSame(['id' => '5'], $second->match('/api/users/5')?->params);
         static::assertSame('numeric segment', $second->match('/api/123')?->route);
     }
 
