@@ -5,45 +5,27 @@ declare(strict_types=1);
 namespace silenz\PhpRouter\Internal;
 
 /**
- * Field positions of the compiled runtime structure, shared by the compiler and the matcher.
+ * The compiled runtime structure, shared by the compiler and the matcher.
  *
- * A compiled node is a list:
+ * Compiled routes are a handful of flat tables. Tree tables are sparse maps keyed by node id (the
+ * root is node 0); route tables are keyed by route id (declaration order):
  *
- *     [
- *         NODE_STATIC    => ['users' => 12, 'posts' => 17], // segment => child node id
- *         NODE_PARAM     => 3,   // child node id of the {param} edge, or NONE
- *         NODE_CATCH     => 7,   // route id(s) of the catch-all edge, or NONE
- *         NODE_CATCH_MIN => 0,   // 0 for {name*}, 1 for {name+}
- *         NODE_ROUTE     => [42, 43], // route id(s) terminating at this node, or NONE
- *     ]
+ *     'static'        => ['/users' => 4, '/' => [0, 1]], // full path => route id(s), parameterless routes
+ *     'edges'         => [0 => ['users' => 1]],          // node => static segment => child node
+ *     'param'         => [1 => 2],                       // node => child node of its {param} edge
+ *     'catch'         => [3 => 7],                       // node => route id(s) of its catch-all edge
+ *     'catchRequired' => [3 => true],                    // nodes whose catch-all is {name+}, not {name*}
+ *     'routes'        => [2 => 5],                       // node => route id(s) ending there
+ *     'metadata'      => [[...], ...],                   // route id => the route's metadata
+ *     'paramNames'    => [5 => ['id']],                  // route id => parameter names, capture order
  *
- * Route id fields hold NONE, a single id, or a list of ids in declaration order when several routes
- * share a path. The static table uses the same form.
- *
- * A compiled route is a list:
- *
- *     [
- *         ROUTE_METADATA => [...],     // the route's metadata, untouched
- *         ROUTE_PARAMS   => ['id'],    // parameter names in capture order
- *     ]
- *
- * Routes without any parameter bypass the tree entirely through the static table, which maps the
- * full path to its route id(s).
+ * Route id(s) are a single id, or a list in declaration order when several routes share a path.
  *
  * @internal
  */
 final class Layout
 {
-    public const int FORMAT_VERSION = 5;
+    public const int FORMAT_VERSION = 6;
 
     public const int NONE = -1;
-
-    public const int NODE_STATIC = 0;
-    public const int NODE_PARAM = 1;
-    public const int NODE_CATCH = 2;
-    public const int NODE_CATCH_MIN = 3;
-    public const int NODE_ROUTE = 4;
-
-    public const int ROUTE_METADATA = 0;
-    public const int ROUTE_PARAMS = 1;
 }

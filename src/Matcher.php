@@ -24,8 +24,6 @@ use function substr;
  * Precedence at every node is static > parameter > catch-all, with backtracking: if the static branch
  * fails further down, the parameter and then the catch-all branch of the same node are tried.
  *
- * @psalm-import-type CompiledNode from Compiler
- * @psalm-import-type CompiledRoute from Compiler
  * @psalm-import-type CompiledRoutes from Compiler
  */
 final readonly class Matcher
@@ -40,11 +38,26 @@ final readonly class Matcher
     /** @var array<array-key, int|non-empty-list<int>> full path => route id(s), for routes without parameters */
     private array $static;
 
-    /** @var list<CompiledNode> */
-    private array $nodes;
+    /** @var array<int, array<array-key, int>> node => static segment => child node */
+    private array $edges;
 
-    /** @var list<CompiledRoute> */
+    /** @var array<int, int> node => child node of the {param} edge */
+    private array $param;
+
+    /** @var array<int, int|non-empty-list<int>> node => route id(s) of the catch-all edge */
+    private array $catch;
+
+    /** @var array<int, true> nodes whose catch-all needs a non-empty rest ({name+}) */
+    private array $catchRequired;
+
+    /** @var array<int, int|non-empty-list<int>> node => route id(s) ending there */
     private array $routes;
+
+    /** @var list<mixed> route id => metadata */
+    private array $metadata;
+
+    /** @var array<int, non-empty-list<string>> route id => parameter names */
+    private array $paramNames;
 
     /**
      * @param CompiledRoutes $compiled output of {@see Compiler::compile()}
@@ -60,8 +73,13 @@ final readonly class Matcher
         }
 
         $this->static = $compiled['static'];
-        $this->nodes = $compiled['nodes'];
+        $this->edges = $compiled['edges'];
+        $this->param = $compiled['param'];
+        $this->catch = $compiled['catch'];
+        $this->catchRequired = $compiled['catchRequired'];
         $this->routes = $compiled['routes'];
+        $this->metadata = $compiled['metadata'];
+        $this->paramNames = $compiled['paramNames'];
     }
 
     /**
@@ -90,9 +108,7 @@ final readonly class Matcher
         $static = $this->static[$path] ?? Layout::NONE;
         if ($static !== Layout::NONE) {
             if ($guard === null) {
-                $routeId = is_int($static) ? $static : $static[0];
-
-                return new RouteMatch($this->routes[$routeId][Layout::ROUTE_METADATA], []);
+                return new RouteMatch($this->metadata[is_int($static) ? $static : $static[0]], []);
             }
 
             $match = $this->select($static, [], $guard, $rejected);
@@ -107,7 +123,11 @@ final readonly class Matcher
             return $this->miss($rejected);
         }
 
-        $nodes = $this->nodes;
+        $edges = $this->edges;
+        $paramEdges = $this->param;
+        $catches = $this->catch;
+        $ends = $this->routes;
+
         $segments = explode('/', substr($path, offset: 1));
         $count = count($segments);
 
@@ -122,12 +142,10 @@ final readonly class Matcher
         $stage = self::ENTER;
 
         while (true) {
-            $current = $nodes[$node];
-
             if ($stage === self::ENTER) {
                 $stage = self::STATIC;
                 if ($index === $count) {
-                    $routes = $current[Layout::NODE_ROUTE];
+                    $routes = $ends[$node] ?? Layout::NONE;
                     if ($routes !== Layout::NONE) {
                         $match = $guard === null
                             ? $this->result(is_int($routes) ? $routes : $routes[0], $values)
@@ -137,8 +155,8 @@ final readonly class Matcher
                         }
                     }
 
-                    $catch = $current[Layout::NODE_CATCH];
-                    if ($catch !== Layout::NONE && $current[Layout::NODE_CATCH_MIN] === 0) {
+                    $catch = $catches[$node] ?? Layout::NONE;
+                    if ($catch !== Layout::NONE && !($this->catchRequired[$node] ?? false)) {
                         $values[$paramCount] = '';
                         $match = $guard === null
                             ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
@@ -153,11 +171,11 @@ final readonly class Matcher
             }
 
             if ($stage === self::STATIC) {
-                $child = $current[Layout::NODE_STATIC][$segments[$index]] ?? Layout::NONE;
+                $child = $edges[$node][$segments[$index]] ?? Layout::NONE;
                 if ($child !== Layout::NONE) {
                     if (
-                        $current[Layout::NODE_PARAM] !== Layout::NONE
-                        || $current[Layout::NODE_CATCH] !== Layout::NONE
+                        ($paramEdges[$node] ?? Layout::NONE) !== Layout::NONE
+                        || ($catches[$node] ?? Layout::NONE) !== Layout::NONE
                     ) {
                         $stack[] = [$node, $index, self::PARAM, $paramCount];
                     }
@@ -172,10 +190,10 @@ final readonly class Matcher
             }
 
             if ($stage === self::PARAM) {
-                $param = $current[Layout::NODE_PARAM];
+                $param = $paramEdges[$node] ?? Layout::NONE;
                 $segment = $segments[$index];
                 if ($param !== Layout::NONE && $segment !== '') {
-                    if ($current[Layout::NODE_CATCH] !== Layout::NONE) {
+                    if (($catches[$node] ?? Layout::NONE) !== Layout::NONE) {
                         $stack[] = [$node, $index, self::CATCH, $paramCount];
                     }
 
@@ -190,10 +208,10 @@ final readonly class Matcher
             }
 
             if ($stage === self::CATCH) {
-                $catch = $current[Layout::NODE_CATCH];
+                $catch = $catches[$node] ?? Layout::NONE;
                 if ($catch !== Layout::NONE) {
                     $rest = implode('/', array_slice($segments, $index));
-                    if ($rest !== '' || $current[Layout::NODE_CATCH_MIN] === 0) {
+                    if ($rest !== '' || !($this->catchRequired[$node] ?? false)) {
                         $values[$paramCount] = $rest;
                         $match = $guard === null
                             ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
@@ -241,14 +259,12 @@ final readonly class Matcher
      */
     private function result(int $routeId, array $values): RouteMatch
     {
-        $route = $this->routes[$routeId];
-
         $params = [];
-        foreach ($route[Layout::ROUTE_PARAMS] as $position => $name) {
+        foreach ($this->paramNames[$routeId] ?? [] as $position => $name) {
             $params[$name] = rawurldecode($values[$position]);
         }
 
-        return new RouteMatch($route[Layout::ROUTE_METADATA], $params);
+        return new RouteMatch($this->metadata[$routeId], $params);
     }
 
     /**
@@ -258,7 +274,7 @@ final readonly class Matcher
     {
         $metadata = [];
         foreach ($rejected as $routeId) {
-            $metadata[] = $this->routes[$routeId][Layout::ROUTE_METADATA];
+            $metadata[] = $this->metadata[$routeId];
         }
 
         return new NoMatch($metadata);

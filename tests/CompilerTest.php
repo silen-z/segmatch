@@ -89,7 +89,7 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 5,
+                'version' => 6,
                 // Parameterless routes are looked up by full path. A single route is stored as its
                 // id; routes sharing a path as a list in declaration order.
                 'static' => [
@@ -97,24 +97,18 @@ final class CompilerTest extends TestCase
                     '/api/health' => 2,
                     '/about' => 4,
                 ],
-                // "/about" and "/api/health" are pruned from the tree; "/api/users" stays as the
-                // parent of {id}, but no longer carries a route. {id} and {name} share a node.
-                'nodes' => [
-                    [['api' => 1], -1, -1, 0, -1],
-                    [['users' => 2, 'files' => 3], -1, -1, 0, -1],
-                    [[], 4, -1, 0, -1],
-                    [[], -1, 3, 1, -1],
-                    [[], -1, -1, 0, [1, 6]],
+                // "/about" and "/api/health" are pruned from the tree; "/api/users" (node 2) stays as
+                // the parent of {id}, but carries no route. {id} and {name} share node 4.
+                'edges' => [
+                    0 => ['api' => 1],
+                    1 => ['users' => 2, 'files' => 3],
                 ],
-                'routes' => [
-                    ['users', []],
-                    ['user', ['id']],
-                    ['health', []],
-                    ['files', ['path']],
-                    ['about', []],
-                    ['create-user', []],
-                    ['user-by-name', ['name']],
-                ],
+                'param' => [2 => 4],
+                'catch' => [3 => 3],
+                'catchRequired' => [3 => true],
+                'routes' => [4 => [1, 6]],
+                'metadata' => ['users', 'user', 'health', 'files', 'about', 'create-user', 'user-by-name'],
+                'paramNames' => [1 => ['id'], 3 => ['path'], 6 => ['name']],
             ],
             Compiler::compile($routes),
         );
