@@ -101,7 +101,7 @@ final readonly class Matcher
      */
     public function match(string $path, ?Closure $guard = null): RouteMatch|NoMatch
     {
-        /** @var list<int> $rejected */
+        /** @var list<RouteMatch> $rejected */
         $rejected = [];
 
         // Routes without parameters are answered by a single hash lookup.
@@ -238,7 +238,7 @@ final readonly class Matcher
      * @param int|non-empty-list<int> $candidates a single route id or several in declaration order
      * @param array<int, string> $values
      * @param Closure(mixed, array<string, string>): bool $guard
-     * @param list<int> $rejected
+     * @param list<RouteMatch> $rejected
      */
     private function select(int|array $candidates, array $values, Closure $guard, array &$rejected): ?RouteMatch
     {
@@ -248,7 +248,7 @@ final readonly class Matcher
                 return $match;
             }
 
-            $rejected[] = $routeId;
+            $rejected[] = $match;
         }
 
         return null;
@@ -268,15 +268,10 @@ final readonly class Matcher
     }
 
     /**
-     * @param list<int> $rejected
+     * @param list<RouteMatch> $rejected
      */
     private function miss(array $rejected): NoMatch
     {
-        $metadata = [];
-        foreach ($rejected as $routeId) {
-            $metadata[] = $this->metadata[$routeId];
-        }
-
-        return new NoMatch($metadata);
+        return new NoMatch($rejected);
     }
 }

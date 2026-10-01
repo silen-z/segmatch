@@ -162,9 +162,8 @@ $router = new Router(
 
 - **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
   route for one method; `map()` for several; `any()` for every method.
-- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()` and
-  `->where()`. `where()` takes a regex for one parameter, without delimiters or anchors. It's
-  validated now; enforcing it at match time is still to come.
+- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
+  `->where()` (a regex for one parameter, without delimiters or anchors) and `->guard()`.
 - **Groups:** `group()` takes an optional prefix, and `->middleware()` and `->define()` may be
   called in any order. Groups with no prefix only add middleware. Groups may share a prefix or
   nest freely, and a route only gets middleware from the groups it's declared in.
@@ -176,46 +175,61 @@ $router = new Router(
 - **Handlers and middleware are stored in the cache,** so they must be plain data: class names,
   `[Class::class, 'method']` arrays, strings, enums. Not closures.
 
+### Guards: methods, patterns and your own conditions
+
+A route's conditions are stored with it as *guards*:
+- its HTTP methods become a `MethodGuard` (`any()` routes get none),
+- `where()` constraints become a `PatternGuard`,
+- `->guard(MyGuard::class, $config)` adds your own.
+
+Match with `Guards::for()`, which runs every candidate route's guards against the request:
+
+```php
+use SilenZ\Segmatch\Http\Guards;
+use SilenZ\Segmatch\Http\Request;
+use SilenZ\Segmatch\RouteMatch;
+
+$request = new Request($method, ['features' => $enabledFeatures]);   // attributes are optional
+$result = $router->match($path, Guards::for($request));              // or Guards::for($method)
+
+if ($result instanceof RouteMatch) {
+    // dispatch $result->route['handler'] through $result->route['middleware'] with $result->params
+} elseif (($allow = Guards::allowedMethods($result, $request)) !== []) {
+    // 405, with header Allow: implode(', ', $allow)
+} else {
+    // 404
+}
+```
+
+- **A rejected route doesn't exist for that request.** Matching continues, so a request falls
+  through to another route: `GET /users/john` skips `GET /users/{id}` with `where('id', '\d+')`
+  and reaches `GET /users/{slug}`.
+- **`allowedMethods()` counts only routes rejected solely because of their method.** A route
+  whose pattern or feature switch fails doesn't make a 405.
+- **A custom guard implements `Http\Guard`:** one static method,
+  `accepts(mixed $config, Request $request, array $params): bool`. The route stores only the
+  class name and the configuration, so both must be cacheable plain data. Anything request-specific
+  the guard needs goes into `Request::$attributes`, loaded once before matching.
+- **Guards decide whether a route applies, never who is asking.** Authentication and permissions
+  belong to middleware, which runs after matching.
+
 Each route's metadata, as returned in `RouteMatch::$route`:
 
 ```php
 [
-    'methods' => ['GET'],                        // ['*'] for any()
     'handler' => [UserController::class, 'show'],
     'middleware' => ['api', 'auth'],
     'name' => 'users.show',                      // only when named
-    'where' => ['id' => '\d+'],                  // only when constrained
+    'guards' => [                                // only when there are any, checked in this order
+        MethodGuard::class => ['GET'],
+        PatternGuard::class => ['id' => '\d+'],
+    ],
 ]
 ```
 
 Compile-time errors include duplicate route names, invalid prefixes or methods, invalid `where()`
-patterns, and `where()` on a parameter the path doesn't have.
-
-### Matching by HTTP method
-
-`Http\MethodGuard` turns the declared methods into a guard:
-
-```php
-use SilenZ\Segmatch\Http\MethodGuard;
-use SilenZ\Segmatch\NoMatch;
-use SilenZ\Segmatch\RouteMatch;
-
-$result = $router->match($path, MethodGuard::for($method));
-
-if ($result instanceof RouteMatch) {
-    // $result->route['handler'], $result->route['middleware'], $result->params
-} elseif ($result->rejected === []) {
-    // 404
-} else {
-    // 405, with header Allow: implode(', ', MethodGuard::allowed($result))
-}
-```
-
-- **Route selection:** routes for other methods are skipped, so several routes can share a path,
-  and a request falls through to another route that accepts its method.
-- **`Allow` list:** `MethodGuard::allowed()` collects the methods of every rejected route.
-- **`any()` routes** accept every method.
-- **Method names** are compared case-insensitively.
+patterns, `where()` on a parameter the path doesn't have, and guard classes that don't implement
+`Http\Guard`.
 ## Architecture
 
 ```

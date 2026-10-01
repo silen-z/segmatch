@@ -14,6 +14,7 @@ use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\RouteSet;
 use SilenZ\Segmatch\Tests\Support\RouteOracle;
 
+use function array_map;
 use function count;
 use function crc32;
 use function implode;
@@ -82,7 +83,11 @@ final class MatcherPropertyTest extends TestCase
     {
         if ($expected['route'] === null) {
             static::assertInstanceOf(NoMatch::class, $actual, $path);
-            static::assertSame($expected['rejected'], $actual->rejected, $path);
+            static::assertSame(
+                $expected['rejected'],
+                array_map(static fn(RouteMatch $m): mixed => $m->route, $actual->rejected),
+                $path,
+            );
 
             return;
         }

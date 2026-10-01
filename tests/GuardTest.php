@@ -74,7 +74,10 @@ final class GuardTest extends TestCase
     {
         static::assertInstanceOf(NoMatch::class, $result);
 
-        return array_map(static fn(mixed $route): string => self::metadata($route)['name'], $result->rejected);
+        return array_map(
+            static fn(RouteMatch $match): string => self::metadata($match->route)['name'],
+            $result->rejected,
+        );
     }
 
     public function testWithoutGuardTheFirstDeclaredRouteOfAPathWins(): void
