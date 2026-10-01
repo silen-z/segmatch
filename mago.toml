@@ -1,0 +1,24 @@
+#:schema https://mago.carthage.software/1.40.2/schema.json
+version = "1"
+php-version = "8.4"
+
+[source]
+paths = ["src", "tests", "benchmarks"]
+includes = ["vendor"]
+excludes = ["var/**"]
+
+[linter]
+integrations = ["phpunit"]
+
+[linter.rules]
+# Matcher::match() is the hot path: one loop with inlined stages on purpose, because every extra
+# function call shows up in the benchmarks. Complexity metrics do not apply to it.
+#
+# Elsewhere the class defaults (15 / 1.6) flag even small compiler classes; the raised thresholds
+# allow a cohesive class with a few loops while still catching runaway growth.
+cyclomatic-complexity = { threshold = 25, exclude = ["src/Matcher.php"] }
+kan-defect = { threshold = 2.5, exclude = ["src/Matcher.php"] }
+halstead = { exclude = ["src/Matcher.php", "tests/", "benchmarks/"] }
+
+# Data-provider heavy test classes and benchmark classes legitimately have many methods.
+too-many-methods = { exclude = ["tests/", "benchmarks/"] }

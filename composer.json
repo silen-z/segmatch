@@ -1,0 +1,42 @@
+{
+    "name": "phrach/php-router",
+    "description": "Segment-tree PHP router compiled into a flat, cacheable node table.",
+    "type": "library",
+    "version": "0.1.0",
+    "license": "proprietary",
+    "autoload": {
+        "psr-4": {
+            "silenz\\PhpRouter\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "silenz\\PhpRouter\\Tests\\": "tests/",
+            "silenz\\PhpRouter\\Benchmarks\\": "benchmarks/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Pavel Hrách",
+            "email": "pavel@hrach.email"
+        }
+    ],
+    "require": {
+        "php": ">=8.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.3",
+        "phpbench/phpbench": "^1.7",
+        "nikic/fast-route": "^1.3"
+    },
+    "scripts": {
+        "test": "phpunit",
+        "bench": "phpbench run --report=aggregate",
+        "qa": [
+            "mago format --check",
+            "mago lint",
+            "mago analyze",
+            "@test"
+        ]
+    }
+}
