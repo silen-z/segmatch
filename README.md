@@ -129,31 +129,31 @@ matching, and let the closure capture it.
 
 ## HTTP routes
 
-`Http\Routes` is a higher-level declaration API with HTTP methods, groups and middleware. It's an
-ordinary route callable for `Router`, so caching works as described above:
+`Http\Routes` is a higher-level declaration API with HTTP methods, groups and middleware.
+`Routes::define()` turns a definition into an ordinary route callable for `Router`, so caching
+works as described above:
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
-use SilenZ\Segmatch\Http\RouteCollector;
 use SilenZ\Segmatch\Http\Routes;
 use SilenZ\Segmatch\Router;
 
 $router = new Router(
-    Routes::define(static function (RouteCollector $r): void {
+    Routes::define(static function (Routes $r): void {
         $r->get('/', HomeController::class);
         $r->map(['GET', 'POST'], '/contact', ContactController::class);
         $r->any('/webhooks/{provider}', WebhookController::class);
 
-        $r->group('/api')->middleware('api')->define(static function (RouteCollector $r): void {
-            $r->group()->middleware('guest')->define(static function (RouteCollector $r): void {
+        $r->group('/api')->middleware('api')->define(static function (Routes $r): void {
+            $r->group()->middleware('guest')->define(static function (Routes $r): void {
                 $r->post('/login', [AuthController::class, 'login'])->name('login');
             });
 
-            $r->group()->middleware('auth')->define(static function (RouteCollector $r): void {
+            $r->group()->middleware('auth')->define(static function (Routes $r): void {
                 $r->get('/users/{id}', [UserController::class, 'show'])->name('users.show')->where('id', '\d+');
                 $r->put('/users/{id}', [UserController::class, 'update']);
 
-                $r->group('/admin')->middleware('admin')->define(static function (RouteCollector $r): void {
+                $r->group('/admin')->middleware('admin')->define(static function (Routes $r): void {
                     $r->get('/stats', [AdminController::class, 'stats'])->middleware('audit');
                 });
             });
