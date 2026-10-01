@@ -7,9 +7,8 @@ The router only answers *which route matched, and what were the parameters*. It 
 the metadata attached to a route, so handlers, HTTP methods and middleware stay the application's
 business.
 
-This package is deliberately a small core: full paths in, metadata out. Prefixes, groups and
-`get()`/`post()` helpers belong to a higher-level layer built on top of it (see
-[Building a higher-level API](#building-a-higher-level-api)).
+The core is deliberately small: full paths in, metadata out. HTTP methods, groups and middleware
+come from `Http\Routes`, a declaration layer built on top of it (see [HTTP routes](#http-routes)).
 
 ## Usage
 
@@ -124,53 +123,73 @@ matching, and let the closure capture it.
   a guard chooses between them.
 - Catch-alls hanging off the same node must all be `{name*}` or all be `{name+}`.
 
-## Building a higher-level API
+## HTTP routes
 
-A wrapper only has to turn its own declarations into full paths and final metadata. For example,
-groups with prefixes and inherited middleware:
+`Http\Routes` is a higher-level declaration API with HTTP methods, groups and middleware. It's an
+ordinary route callable for `Router`, so caching works as described above:
 
 ```php
-final class AppRouter
-{
-    private string $prefix = '';
-    private array $middleware = [];
+use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\Http\RouteCollector;
+use SilenZ\Segmatch\Http\Routes;
+use SilenZ\Segmatch\Router;
 
-    public function __construct(private RouteSet $routes) {}
+$router = new Router(
+    new Routes(static function (RouteCollector $r): void {
+        $r->get('/', HomeController::class);
+        $r->map(['GET', 'POST'], '/contact', ContactController::class);
+        $r->any('/webhooks/{provider}', WebhookController::class);
 
-    public function get(string $path, string $handler): void
-    {
-        $this->routes->add($this->prefix . $path, [
-            'methods' => ['GET'],
-            'handler' => $handler,
-            'middleware' => $this->middleware,
-        ]);
-    }
+        $r->group('/api')->middleware('api')->routes(static function (RouteCollector $r): void {
+            $r->group()->middleware('guest')->routes(static function (RouteCollector $r): void {
+                $r->post('/login', [AuthController::class, 'login'])->name('login');
+            });
 
-    public function group(string $prefix, Closure $define, array $middleware = []): void
-    {
-        [$outerPrefix, $outerMiddleware] = [$this->prefix, $this->middleware];
-        $this->prefix .= $prefix;
-        $this->middleware = [...$this->middleware, ...$middleware];
-        try {
-            $define($this);
-        } finally {
-            [$this->prefix, $this->middleware] = [$outerPrefix, $outerMiddleware];
-        }
-    }
-}
+            $r->group()->middleware('auth')->routes(static function (RouteCollector $r): void {
+                $r->get('/users/{id}', [UserController::class, 'show'])->name('users.show')->where('id', '\d+');
+                $r->put('/users/{id}', [UserController::class, 'update']);
 
-$router = new Router(static function (RouteSet $routes): void {
-    $r = new AppRouter($routes);
-    $r->group('/api', static function (AppRouter $r): void {
-        $r->get('/login', 'auth.login');
-        $r->group('', static fn(AppRouter $r) => $r->get('/users/{id}', 'users.show'), ['auth']);
-    }, ['api']);
-}, new FileCache(__DIR__ . '/var/cache'), 'routes-' . APP_VERSION);
+                $r->group('/admin')->middleware('admin')->routes(static function (RouteCollector $r): void {
+                    $r->get('/stats', [AdminController::class, 'stats'])->middleware('audit');
+                });
+            });
+        });
+    }),
+    cache: new FileCache(__DIR__ . '/var/cache'),
+    cacheKey: 'routes-' . APP_VERSION,
+);
 ```
 
-Because group metadata is resolved into each route's metadata, groups can have no prefix, share a
-prefix, or nest freely, and a route never picks up metadata from a group it wasn't declared in.
+- **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
+  route for one method; `map()` for several; `any()` for every method.
+- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()` and
+  `->where()`. `where()` takes a regex for one parameter, without delimiters or anchors. It's
+  validated now and will take effect once HTTP dispatching is added.
+- **Groups:** `group()` takes an optional prefix, and `->middleware()` and `->routes()` may be
+  called in any order. Groups with no prefix only add middleware. Groups may share a prefix or
+  nest freely, and a route only gets middleware from the groups it's declared in.
+- **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
+  `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
+- **Definitions as a class:** the definition callable may be an invokable class
+  (`new Routes(new AppRoutes())`). `Router` also accepts any invokable that takes a `RouteSet`
+  directly.
+- **Handlers and middleware are stored in the cache,** so they must be plain data: class names,
+  `[Class::class, 'method']` arrays, strings, enums. Not closures.
 
+Each route's metadata, as returned in `RouteMatch::$route`:
+
+```php
+[
+    'methods' => ['GET'],                        // ['*'] for any()
+    'handler' => [UserController::class, 'show'],
+    'middleware' => ['api', 'auth'],
+    'name' => 'users.show',                      // only when named
+    'where' => ['id' => '\d+'],                  // only when constrained
+]
+```
+
+Compile-time errors include duplicate route names, invalid prefixes or methods, invalid `where()`
+patterns, and `where()` on a parameter the path doesn't have.
 ## Architecture
 
 ```

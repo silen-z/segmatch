@@ -21,18 +21,24 @@ use SilenZ\Segmatch\Internal\Layout;
  */
 final class Router
 {
+    /** @var Closure(RouteSet): void */
+    private readonly Closure $routes;
+
     private ?Matcher $matcher = null;
 
     /**
-     * @param Closure(RouteSet): void $routes declares the routes; only called when there is no usable cache entry
+     * @param callable(RouteSet): void $routes declares the routes, e.g. a closure, an invokable object
+     *     or {@see Http\Routes}; only called when there is no usable cache entry
      * @param ?RouteCache $cache where compiled routes are kept; null disables caching
      * @param string $cacheKey identifies these routes in the cache
      */
     public function __construct(
-        private readonly Closure $routes,
+        callable $routes,
         private readonly ?RouteCache $cache = null,
         private readonly string $cacheKey = 'routes',
-    ) {}
+    ) {
+        $this->routes = $routes(...);
+    }
 
     /**
      * @param string $path request path without query string, starting with "/"
