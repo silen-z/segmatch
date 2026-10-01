@@ -164,7 +164,7 @@ $router = new Router(
   route for one method; `map()` for several; `any()` for every method.
 - **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()` and
   `->where()`. `where()` takes a regex for one parameter, without delimiters or anchors. It's
-  validated now and will take effect once HTTP dispatching is added.
+  validated now; enforcing it at match time is still to come.
 - **Groups:** `group()` takes an optional prefix, and `->middleware()` and `->routes()` may be
   called in any order. Groups with no prefix only add middleware. Groups may share a prefix or
   nest freely, and a route only gets middleware from the groups it's declared in.
@@ -190,6 +190,32 @@ Each route's metadata, as returned in `RouteMatch::$route`:
 
 Compile-time errors include duplicate route names, invalid prefixes or methods, invalid `where()`
 patterns, and `where()` on a parameter the path doesn't have.
+
+### Matching by HTTP method
+
+`Http\MethodGuard` turns the declared methods into a guard:
+
+```php
+use SilenZ\Segmatch\Http\MethodGuard;
+use SilenZ\Segmatch\NoMatch;
+use SilenZ\Segmatch\RouteMatch;
+
+$result = $router->match($path, MethodGuard::for($method));
+
+if ($result instanceof RouteMatch) {
+    // $result->route['handler'], $result->route['middleware'], $result->params
+} elseif ($result->rejected === []) {
+    // 404
+} else {
+    // 405, with header Allow: implode(', ', MethodGuard::allowed($result))
+}
+```
+
+- **Route selection:** routes for other methods are skipped, so several routes can share a path,
+  and a request falls through to another route that accepts its method.
+- **`Allow` list:** `MethodGuard::allowed()` collects the methods of every rejected route.
+- **`any()` routes** accept every method.
+- **Method names** are compared case-insensitively.
 ## Architecture
 
 ```
