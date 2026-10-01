@@ -6,9 +6,11 @@ namespace silenz\PhpRouter\Benchmarks;
 
 use FastRoute\Dispatcher;
 use FastRoute\RouteCollector as FastRouteCollector;
+use LogicException;
+use silenz\PhpRouter\Cache\FileCache;
 use silenz\PhpRouter\Compiler;
 use silenz\PhpRouter\Matcher;
-use silenz\PhpRouter\RouteCache;
+use silenz\PhpRouter\Router;
 use silenz\PhpRouter\RouteSet;
 
 use function FastRoute\cachedDispatcher;
@@ -47,19 +49,20 @@ final class Routers
         return new Matcher(Compiler::compile(self::flatRouteSet($routes)));
     }
 
+    public const string CACHE_DIRECTORY = __DIR__ . '/../var/bench-cache';
+
     /**
-     * Writes fresh cache files of both routers for a fixture.
+     * Writes fresh caches of both routers for a fixture. This router's cache is stored in
+     * {@see CACHE_DIRECTORY} under the fixture name as key.
      *
-     * @return array{string, string} paths of this router's and FastRoute's cache file
+     * @return string the path of FastRoute's cache file
      */
-    public static function writeCaches(string $fixture): array
+    public static function writeCaches(string $fixture): string
     {
         $routes = Fixtures::get($fixture)['routes'];
-        $directory = __DIR__ . '/../var/bench-cache/';
-        $flatFile = $directory . $fixture . '.flat.php';
-        $fastRouteFile = $directory . $fixture . '.fast-route.php';
+        $fastRouteFile = self::CACHE_DIRECTORY . '/' . $fixture . '.fast-route.php';
 
-        new RouteCache($flatFile)->write(Compiler::compile(self::flatRouteSet($routes)));
+        new FileCache(self::CACHE_DIRECTORY)->set($fixture, Compiler::compile(self::flatRouteSet($routes)));
 
         // FastRoute only writes its cache when the file does not exist yet.
         if (is_file($fastRouteFile)) {
@@ -67,7 +70,20 @@ final class Routers
         }
         self::fastRoute($routes, $fastRouteFile);
 
-        return [$flatFile, $fastRouteFile];
+        return $fastRouteFile;
+    }
+
+    /**
+     * This router as an application uses it, for a fixture whose cache was written by
+     * {@see writeCaches()}. Declaring the routes would mean the cache was not used, so it fails.
+     */
+    public static function cachedFlat(string $fixture): Router
+    {
+        return new Router(
+            static fn(RouteSet $_routes) => throw new LogicException('Cache entry missing.'),
+            new FileCache(self::CACHE_DIRECTORY),
+            $fixture,
+        );
     }
 
     /**

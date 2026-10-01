@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace silenz\PhpRouter\Benchmarks;
 
 use FastRoute\RouteCollector as FastRouteCollector;
-use LogicException;
 use PhpBench\Attributes\BeforeMethods;
 use PhpBench\Attributes\Groups;
 use PhpBench\Attributes\Iterations;
 use PhpBench\Attributes\ParamProviders;
 use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
-use silenz\PhpRouter\Matcher;
-use silenz\PhpRouter\RouteCache;
 
 use function FastRoute\cachedDispatcher;
 
@@ -30,7 +27,7 @@ use function FastRoute\cachedDispatcher;
 #[Warmup(1)]
 final class LoadBench
 {
-    private string $flatFile = '';
+    private string $fixture = '';
 
     private string $fastRouteFile = '';
 
@@ -39,12 +36,13 @@ final class LoadBench
      */
     public function setUp(array $params): void
     {
-        [$this->flatFile, $this->fastRouteFile] = Routers::writeCaches($params['fixture']);
+        $this->fixture = $params['fixture'];
+        $this->fastRouteFile = Routers::writeCaches($params['fixture']);
     }
 
     public function benchFlat(): void
     {
-        new Matcher(new RouteCache($this->flatFile)->read() ?? throw new LogicException('Cache file missing.'));
+        Routers::cachedFlat($this->fixture)->matcher();
     }
 
     public function benchFastRoute(): void

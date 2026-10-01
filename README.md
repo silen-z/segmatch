@@ -14,20 +14,22 @@ This package is deliberately a small core: full paths in, metadata out. Prefixes
 ## Usage
 
 ```php
-use silenz\PhpRouter\NoMatch;
-use silenz\PhpRouter\RouteCache;
+use silenz\PhpRouter\Cache\FileCache;
 use silenz\PhpRouter\RouteMatch;
+use silenz\PhpRouter\Router;
 use silenz\PhpRouter\RouteSet;
 
-$matcher = new RouteCache(__DIR__ . '/var/routes-' . APP_VERSION . '.php', enabled: !APP_DEBUG)->load(
+$router = new Router(
     static function (RouteSet $routes): void {
         $routes->add('/', ['handler' => 'home']);
         $routes->add('/api/users/{id}', ['handler' => 'users.show', 'middleware' => ['auth']]);
         $routes->add('/assets/{path+}', ['handler' => 'assets']);
     },
+    cache: APP_DEBUG ? null : new FileCache(__DIR__ . '/var/cache'),
+    cacheKey: 'routes-' . APP_VERSION,
 );
 
-$result = $matcher->match('/api/users/42');
+$result = $router->match('/api/users/42');
 if ($result instanceof RouteMatch) {
     $result->route;  // ['handler' => 'users.show', 'middleware' => ['auth']]
     $result->params; // ['id' => '42']
@@ -36,24 +38,29 @@ if ($result instanceof RouteMatch) {
 
 - `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
   Parameter values are `rawurldecode`d.
-- Without a cache, use `new Matcher(Compiler::compile($routes))` directly.
+- `Router` is a thin entry point over the lower-level pieces. `new Matcher(Compiler::compile($routes))`
+  gives a matcher without any caching, and `$router->matcher()` returns the router's own one.
 
-Metadata is written into the cache file, so it may only contain scalars, `null`, enums and arrays
-of those. Anything else is rejected at compile time.
+Metadata is written into the cache, so it may only contain scalars, `null`, enums and arrays of
+those. Anything else is rejected at compile time.
 
 ### Caching
 
-`RouteCache` works like FastRoute's cached dispatcher:
+Caching works like FastRoute's cached dispatcher:
 
-- **The cache key is the cache file.** If it exists, it is used as is and the callback passed to
-  `load()` never runs. On a warm request the routes are not declared at all, just `require`d.
+- **The route callback runs only on a cache miss.** It runs the first time the router is used and
+  the cache has no entry for `cacheKey`. On a warm request the routes are not declared at all; the
+  compiled table comes straight from the cache.
 - **Nothing is invalidated automatically.** Anything that changes which routes get compiled must
-  change the key: a deploy, or configuration that decides which routes exist. Put an application
-  version or a hash of that configuration into the key.
-- **`enabled: false` turns the cache off**, for development. Routes are then compiled on every
-  `load()`, and nothing is read or written.
-- **For custom cache handling**, `read()` and `write()` are public.
-
+  change `cacheKey`: a deploy, or configuration that decides which routes exist. Put an application
+  version or a hash of that configuration into the key. Different keys are separate cache entries.
+- **`cache: null` disables caching.** Routes are then compiled whenever a `Router` is first used,
+  which is what you want in development.
+- **Any storage works.** `Cache\RouteCache` is a two-method interface (`get(key)`, `set(key,
+  compiled)`). `Cache\FileCache` stores each key as a PHP file in a directory, written atomically
+  and loaded with `require`, so OPcache serves it from memory. The file name is the key made safe
+  for the file system, plus a short hash, e.g. `routes-v2.1f3c8a2b.php`. Entries written by an
+  incompatible router version are ignored and recompiled.
 ### Several routes per path and guards
 
 Several routes may share a path, typically one per HTTP method. A *guard* passed to `match()`
@@ -63,7 +70,7 @@ decides which of them applies:
 $routes->add('/users', ['methods' => ['GET'], 'handler' => 'users.list']);
 $routes->add('/users', ['methods' => ['POST'], 'handler' => 'users.create']);
 
-$result = $matcher->match($path, static fn(array $route, array $params): bool => in_array($method, $route['methods'], true));
+$result = $router->match($path, static fn(array $route, array $params): bool => in_array($method, $route['methods'], true));
 
 if ($result instanceof RouteMatch) {
     // dispatch $result->route with $result->params
@@ -121,7 +128,7 @@ A wrapper only has to turn its own declarations into full paths and final metada
 groups with prefixes and inherited middleware:
 
 ```php
-final class Router
+final class AppRouter
 {
     private string $prefix = '';
     private array $middleware = [];
@@ -150,13 +157,13 @@ final class Router
     }
 }
 
-$matcher = new RouteCache($file)->load(static function (RouteSet $routes): void {
-    $r = new Router($routes);
-    $r->group('/api', static function (Router $r): void {
+$router = new Router(static function (RouteSet $routes): void {
+    $r = new AppRouter($routes);
+    $r->group('/api', static function (AppRouter $r): void {
         $r->get('/login', 'auth.login');
-        $r->group('', static fn(Router $r) => $r->get('/users/{id}', 'users.show'), ['auth']);
+        $r->group('', static fn(AppRouter $r) => $r->get('/users/{id}', 'users.show'), ['auth']);
     }, ['api']);
-});
+}, new FileCache(__DIR__ . '/var/cache'), 'routes-' . APP_VERSION);
 ```
 
 Because group metadata is resolved into each route's metadata, groups can have no prefix, share a
@@ -165,8 +172,10 @@ prefix, or nest freely, and a route never picks up metadata from a group it wasn
 ## Architecture
 
 ```
-RouteSet ──► TreeBuilder ──► Flattener ──► RouteCache (PHP file) ──► Matcher
- paths        tree + checks    tables        return [...]              hash lookup / loop + backtracking
+RouteSet ──► TreeBuilder ──► Flattener ──► RouteCache ──► Matcher
+ paths       tree + checks   tables        e.g. FileCache  static hash lookup, then tree loop + backtracking
+
+Router wires these together: on a cache miss it declares, compiles and stores the routes.
 ```
 
 - **Routes without parameters** are answered from a static table keyed by the full path, a single

@@ -18,7 +18,7 @@ use function sprintf;
  * Compiles route declarations into the flat runtime structure consumed by {@see Matcher}.
  *
  * The output is plain data: it can be passed to the matcher directly or written to a PHP file
- * by {@see RouteCache} and loaded back with `require`.
+ * by a {@see Cache\RouteCache} and loaded back from it.
  *
  * @psalm-type CompiledNode = array{0: array<array-key, int>, 1: int, 2: list<int>, 3: int, 4: list<int>}
  * @psalm-type CompiledRoute = array{0: mixed, 1: list<string>}

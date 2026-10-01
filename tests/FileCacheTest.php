@@ -1,0 +1,117 @@
+<?php
+
+declare(strict_types=1);
+
+namespace silenz\PhpRouter\Tests;
+
+use LogicException;
+use PHPUnit\Framework\TestCase;
+use silenz\PhpRouter\Cache\FileCache;
+use silenz\PhpRouter\Compiler;
+use silenz\PhpRouter\RouteMatch;
+use silenz\PhpRouter\Router;
+use silenz\PhpRouter\RouteSet;
+use silenz\PhpRouter\Tests\Fixtures\Method;
+
+use function basename;
+use function dirname;
+use function file_put_contents;
+use function glob;
+use function is_dir;
+use function rmdir;
+use function sys_get_temp_dir;
+use function uniqid;
+use function unlink;
+
+final class FileCacheTest extends TestCase
+{
+    private string $directory;
+
+    protected function setUp(): void
+    {
+        $this->directory = sys_get_temp_dir() . '/php-router-' . uniqid() . '/cache';
+    }
+
+    protected function tearDown(): void
+    {
+        if (!is_dir($this->directory)) {
+            return;
+        }
+
+        $files = glob($this->directory . '/*');
+        foreach ($files === false ? [] : $files as $file) {
+            unlink($file);
+        }
+        rmdir($this->directory);
+        rmdir(dirname($this->directory));
+    }
+
+    public function testStoredRoutesAreReadBackUnchanged(): void
+    {
+        $routes = new RouteSet();
+        $routes->add('/api/users/{id}', [
+            'methods' => [Method::Get, Method::Put],
+            'handler' => ['UserController', 'show'],
+            'weight' => 1.5,
+            'public' => false,
+            'extra' => null,
+            "quote'd" => "it's",
+        ]);
+        $routes->add('/api/123', 'numeric segment');
+        $routes->add('/assets/{path*}', 'assets');
+        $compiled = Compiler::compile($routes);
+
+        $cache = new FileCache($this->directory);
+        $cache->set('routes', $compiled);
+
+        static::assertSame($compiled, $cache->get('routes'));
+    }
+
+    public function testMissingKeyReturnsNull(): void
+    {
+        static::assertNull(new FileCache($this->directory)->get('routes'));
+    }
+
+    public function testFileThatDoesNotReturnAnArrayIsIgnored(): void
+    {
+        $cache = new FileCache($this->directory);
+        $cache->set('routes', Compiler::compile(new RouteSet()));
+        file_put_contents($cache->file('routes'), data: '<?php return 42;');
+
+        static::assertNull($cache->get('routes'));
+    }
+
+    public function testEachKeyHasItsOwnReadableFile(): void
+    {
+        $cache = new FileCache($this->directory . '/');
+
+        static::assertMatchesRegularExpression('/^routes-v2\.[0-9a-f]{8}\.php$/', basename($cache->file('routes-v2')));
+        static::assertSame($this->directory, dirname($cache->file('routes-v2')));
+        static::assertNotSame($cache->file('routes-v1'), $cache->file('routes-v2'));
+    }
+
+    public function testKeysWithUnsafeCharactersDoNotCollide(): void
+    {
+        $cache = new FileCache($this->directory);
+
+        static::assertMatchesRegularExpression(
+            '/^tenant_a_routes\.[0-9a-f]{8}\.php$/',
+            basename($cache->file('tenant/a:routes')),
+        );
+        static::assertNotSame($cache->file('tenant/a:routes'), $cache->file('tenant:a/routes'));
+    }
+
+    public function testRouterUsesTheFileCache(): void
+    {
+        $cache = new FileCache($this->directory);
+        new Router(static fn(RouteSet $r) => $r->add('/a', 'a'), $cache, 'app')->match('/a');
+
+        $router = new Router(static fn() => throw new LogicException('should not compile'), $cache, 'app');
+
+        $result = $router->match('/a');
+
+        static::assertFileExists($cache->file('app'));
+        static::assertInstanceOf(RouteMatch::class, $result);
+        static::assertSame('a', $result->route);
+    }
+}
