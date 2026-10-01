@@ -166,13 +166,15 @@ $router = new Router(
 
 - **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
   route for one method; `map()` for several; `any()` for every method.
-- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()` and
-  `->guard()`.
+- **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
+  `->tag()` and `->guard()`.
 - **Groups:** `group()` takes an optional prefix, and `->middleware()` and `->define()` may be
   called in any order. Groups with no prefix only add middleware. Groups may share a prefix or
   nest freely, and a route only gets middleware from the groups it's declared in.
 - **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
   `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
+- **Tags:** `->tag('public', ...)` on a route or a group labels routes for your own code. Group
+  tags are inherited, outermost first, without duplicates. The router never interprets tags.
 - **Definitions as a class:** the definition callable may be an invokable class
   (`Routes::define(new AppRoutes())`). `Router` also accepts any invokable that returns
   `RouteDefinition`s directly.
@@ -227,6 +229,7 @@ Each route's metadata, as returned in `RouteMatch::$route`:
     'handler' => [UserController::class, 'show'],
     'middleware' => ['api', 'auth'],
     'name' => 'users.show',                      // only when named
+    'tags' => ['public'],                        // only when tagged
     'guards' => [                                // only when there are any, checked in this order
         MethodGuard::class => ['GET'],
         FeatureGuard::class => 'beta',            // a guard of your own
@@ -234,8 +237,21 @@ Each route's metadata, as returned in `RouteMatch::$route`:
 ]
 ```
 
-Compile-time errors include duplicate route names, invalid prefixes or methods, and guard classes
-that don't implement `Http\Guard`.
+Tags let cross-cutting code act on routes without groups. For example, a global auth middleware
+that lets public routes through:
+
+```php
+$r->get('/login', [AuthController::class, 'form'])->tag('public');
+$r->get('/account', [AccountController::class, 'show']);
+
+// in the auth middleware, after matching:
+if (!in_array('public', $match->route['tags'] ?? [], true) && !$session->isLoggedIn()) {
+    return new Response(401);
+}
+```
+
+Compile-time errors include duplicate route names, empty names or tags, invalid prefixes or
+methods, and guard classes that don't implement `Http\Guard`.
 ## Architecture
 
 ```
