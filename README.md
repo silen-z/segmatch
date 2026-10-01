@@ -58,9 +58,11 @@ Caching works like FastRoute's cached dispatcher:
   which is what you want in development.
 - **Any storage works.** `Cache\RouteCache` is a two-method interface (`get(key)`, `set(key,
   compiled)`). `Cache\FileCache` stores each key as a PHP file in a directory, written atomically
-  and loaded with `require`, so OPcache serves it from memory. The file name is the key made safe
-  for the file system, plus a short hash, e.g. `routes-v2.1f3c8a2b.php`. Entries written by an
-  incompatible router version are ignored and recompiled.
+  and loaded with `require`, so OPcache serves it from memory. A key made of letters, digits,
+  `.`, `_` and `-` is the file name (`routes-v2` => `routes-v2.php`); other keys are made safe and
+  get a short hash (`tenant/a` => `tenant_a~1f3c8a2b.php`). Entries written by an incompatible
+  router version are ignored and recompiled.
+
 ### Several routes per path and guards
 
 Several routes may share a path, typically one per HTTP method. A *guard* passed to `match()`

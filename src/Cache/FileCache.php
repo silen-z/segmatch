@@ -24,6 +24,8 @@ use function restore_error_handler;
 use function rtrim;
 use function set_error_handler;
 use function sprintf;
+use function strlen;
+use function strspn;
 use function substr;
 use function unlink;
 
@@ -31,12 +33,18 @@ use function unlink;
  * Stores compiled routes as PHP files that are loaded with a plain `require`, and therefore served
  * from OPcache in production.
  *
- * Each key maps to its own file in the directory. The file name keeps the key readable and adds a
- * short hash, so keys differing only in characters that are unsafe in file names never collide.
+ * Each key maps to its own file in the directory: a key made of `A-Z a-z 0-9 . _ -` is used as the
+ * file name directly. Any other key is made safe and gets a short hash after a `~`, which cannot
+ * appear in a safe key, so no two keys ever share a file.
  */
-final readonly class FileCache implements RouteCache
+final class FileCache implements RouteCache
 {
-    private string $directory;
+    private const string SAFE_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-';
+
+    private readonly string $directory;
+
+    /** @var array<string, string> key => file, so long-running processes build each name once */
+    private array $files = [];
 
     public function __construct(string $directory)
     {
@@ -93,13 +101,23 @@ final readonly class FileCache implements RouteCache
     }
 
     /**
-     * The file a key is stored in, e.g. key "routes-v2" => "<directory>/routes-v2.1f3c8a2b.php".
+     * The file a key is stored in, e.g. "routes-v2" => "<directory>/routes-v2.php" and
+     * "tenant/a" => "<directory>/tenant_a~1f3c8a2b.php".
      */
     public function file(string $key): string
     {
+        return $this->files[$key] ??= $this->directory . '/' . self::fileName($key) . '.php';
+    }
+
+    private static function fileName(string $key): string
+    {
+        if ($key !== '' && strspn($key, self::SAFE_CHARACTERS) === strlen($key)) {
+            return $key;
+        }
+
         $readable = (string) preg_replace('/[^A-Za-z0-9._-]+/', replacement: '_', subject: $key);
 
-        return $this->directory . '/' . $readable . '.' . substr(hash('xxh128', $key), offset: 0, length: 8) . '.php';
+        return $readable . '~' . substr(hash('xxh128', $key), offset: 0, length: 8);
     }
 
     /**

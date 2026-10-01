@@ -10,11 +10,11 @@ use UnitEnum;
 use function array_is_list;
 use function implode;
 use function is_array;
-use function str_repeat;
 use function var_export;
 
 /**
- * Renders compiled routes as a readable PHP file that returns the structure unchanged.
+ * Renders compiled routes as a PHP file that returns the structure unchanged: one line per static
+ * entry, node and route, so the file stays small and still readable.
  *
  * @internal
  *
@@ -37,6 +37,11 @@ final class Exporter
             $nodes[] = '        /* ' . $id . ' */ ' . self::inline($node) . ',';
         }
 
+        $routes = [];
+        foreach ($compiled['routes'] as $id => $route) {
+            $routes[] = '        /* ' . $id . ' */ ' . self::inline($route) . ',';
+        }
+
         return implode("\n", [
             '<?php',
             '',
@@ -52,7 +57,9 @@ final class Exporter
             "    'nodes' => [",
             ...$nodes,
             '    ],',
-            "    'routes' => " . self::pretty($compiled['routes'], 1) . ',',
+            "    'routes' => [",
+            ...$routes,
+            '    ],',
             '];',
             '',
         ]);
@@ -72,35 +79,6 @@ final class Exporter
         }
 
         return '[' . implode(', ', $items) . ']';
-    }
-
-    /**
-     * @param non-negative-int $depth
-     */
-    private static function pretty(mixed $value, int $depth): string
-    {
-        if (!is_array($value)) {
-            return self::scalar($value);
-        }
-
-        if ($value === []) {
-            return '[]';
-        }
-
-        $list = array_is_list($value);
-        $indent = str_repeat('    ', $depth + 1);
-        $lines = ['['];
-        // @mago-expect analysis:mixed-assignment
-        foreach ($value as $key => $item) {
-            $lines[] =
-                $indent
-                . ($list ? '' : var_export($key, return: true) . ' => ')
-                . self::pretty($item, $depth + 1)
-                . ',';
-        }
-        $lines[] = str_repeat('    ', $depth) . ']';
-
-        return implode("\n", $lines);
     }
 
     private static function scalar(mixed $value): string

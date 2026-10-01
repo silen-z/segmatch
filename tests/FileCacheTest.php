@@ -85,7 +85,7 @@ final class FileCacheTest extends TestCase
     {
         $cache = new FileCache($this->directory . '/');
 
-        static::assertMatchesRegularExpression('/^routes-v2\.[0-9a-f]{8}\.php$/', basename($cache->file('routes-v2')));
+        static::assertSame('routes-v2.php', basename($cache->file('routes-v2')));
         static::assertSame($this->directory, dirname($cache->file('routes-v2')));
         static::assertNotSame($cache->file('routes-v1'), $cache->file('routes-v2'));
     }
@@ -95,10 +95,12 @@ final class FileCacheTest extends TestCase
         $cache = new FileCache($this->directory);
 
         static::assertMatchesRegularExpression(
-            '/^tenant_a_routes\.[0-9a-f]{8}\.php$/',
+            '/^tenant_a_routes~[0-9a-f]{8}\.php$/',
             basename($cache->file('tenant/a:routes')),
         );
         static::assertNotSame($cache->file('tenant/a:routes'), $cache->file('tenant:a/routes'));
+        static::assertNotSame($cache->file('tenant_a_routes'), $cache->file('tenant/a:routes'));
+        static::assertMatchesRegularExpression('/^~[0-9a-f]{8}\.php$/', basename($cache->file('')));
     }
 
     public function testRouterUsesTheFileCache(): void

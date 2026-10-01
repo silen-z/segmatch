@@ -28,7 +28,10 @@ final class Flattener
     public static function flatten(BuildNode $root, array $routes): array
     {
         // Must run before node ids are assigned: it prunes the tree.
-        $static = StaticTable::extract($root, $routes);
+        $static = [];
+        foreach (StaticTable::extract($root, $routes) as $path => $ids) {
+            $static[$path] = self::ids($ids);
+        }
 
         return [
             'version' => Layout::FORMAT_VERSION,
@@ -71,13 +74,30 @@ final class Flattener
             $nodes[] = [
                 Layout::NODE_STATIC => $static,
                 Layout::NODE_PARAM => $node->param !== null ? $ids[spl_object_id($node->param)] : Layout::NONE,
-                Layout::NODE_CATCH => $node->catchRoutes,
+                Layout::NODE_CATCH => self::ids($node->catchRoutes),
                 Layout::NODE_CATCH_MIN => $node->catchType === SegmentType::CatchAllOne ? 1 : 0,
-                Layout::NODE_ROUTE => $node->routes,
+                Layout::NODE_ROUTE => self::ids($node->routes),
             ];
         }
 
         return $nodes;
+    }
+
+    /**
+     * Route ids in their compact form: NONE, a single id (by far the common case), or a list when
+     * several routes share a path. Fewer arrays make the cache file cheaper to load.
+     *
+     * @param list<int> $ids
+     *
+     * @return int|non-empty-list<int>
+     */
+    private static function ids(array $ids): int|array
+    {
+        if ($ids === []) {
+            return Layout::NONE;
+        }
+
+        return count($ids) === 1 ? $ids[0] : $ids;
     }
 
     /**

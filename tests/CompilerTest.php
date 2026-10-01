@@ -89,22 +89,22 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 4,
-                // Parameterless routes are looked up by full path; routes sharing a path keep
-                // declaration order.
+                'version' => 5,
+                // Parameterless routes are looked up by full path. A single route is stored as its
+                // id; routes sharing a path as a list in declaration order.
                 'static' => [
                     '/api/users' => [0, 5],
-                    '/api/health' => [2],
-                    '/about' => [4],
+                    '/api/health' => 2,
+                    '/about' => 4,
                 ],
                 // "/about" and "/api/health" are pruned from the tree; "/api/users" stays as the
                 // parent of {id}, but no longer carries a route. {id} and {name} share a node.
                 'nodes' => [
-                    [['api' => 1], -1, [], 0, []],
-                    [['users' => 2, 'files' => 3], -1, [], 0, []],
-                    [[], 4, [], 0, []],
-                    [[], -1, [3], 1, []],
-                    [[], -1, [], 0, [1, 6]],
+                    [['api' => 1], -1, -1, 0, -1],
+                    [['users' => 2, 'files' => 3], -1, -1, 0, -1],
+                    [[], 4, -1, 0, -1],
+                    [[], -1, 3, 1, -1],
+                    [[], -1, -1, 0, [1, 6]],
                 ],
                 'routes' => [
                     ['users', []],

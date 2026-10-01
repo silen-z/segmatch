@@ -13,6 +13,7 @@ use function array_slice;
 use function count;
 use function explode;
 use function implode;
+use function is_int;
 use function rawurldecode;
 use function sprintf;
 use function substr;
@@ -36,7 +37,7 @@ final readonly class Matcher
     private const int CATCH = 3;
     private const int EXHAUSTED = 4;
 
-    /** @var array<array-key, non-empty-list<int>> full path => route ids, for routes without parameters */
+    /** @var array<array-key, int|non-empty-list<int>> full path => route id(s), for routes without parameters */
     private array $static;
 
     /** @var list<CompiledNode> */
@@ -86,10 +87,12 @@ final readonly class Matcher
         $rejected = [];
 
         // Routes without parameters are answered by a single hash lookup.
-        $static = $this->static[$path] ?? null;
-        if ($static !== null) {
+        $static = $this->static[$path] ?? Layout::NONE;
+        if ($static !== Layout::NONE) {
             if ($guard === null) {
-                return new RouteMatch($this->routes[$static[0]][Layout::ROUTE_METADATA], []);
+                $routeId = is_int($static) ? $static : $static[0];
+
+                return new RouteMatch($this->routes[$routeId][Layout::ROUTE_METADATA], []);
             }
 
             $match = $this->select($static, [], $guard, $rejected);
@@ -125,9 +128,9 @@ final readonly class Matcher
                 $stage = self::STATIC;
                 if ($index === $count) {
                     $routes = $current[Layout::NODE_ROUTE];
-                    if ($routes !== []) {
+                    if ($routes !== Layout::NONE) {
                         $match = $guard === null
-                            ? $this->result($routes[0], $values)
+                            ? $this->result(is_int($routes) ? $routes : $routes[0], $values)
                             : $this->select($routes, $values, $guard, $rejected);
                         if ($match !== null) {
                             return $match;
@@ -135,10 +138,10 @@ final readonly class Matcher
                     }
 
                     $catch = $current[Layout::NODE_CATCH];
-                    if ($catch !== [] && $current[Layout::NODE_CATCH_MIN] === 0) {
+                    if ($catch !== Layout::NONE && $current[Layout::NODE_CATCH_MIN] === 0) {
                         $values[$paramCount] = '';
                         $match = $guard === null
-                            ? $this->result($catch[0], $values)
+                            ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
                             : $this->select($catch, $values, $guard, $rejected);
                         if ($match !== null) {
                             return $match;
@@ -152,7 +155,10 @@ final readonly class Matcher
             if ($stage === self::STATIC) {
                 $child = $current[Layout::NODE_STATIC][$segments[$index]] ?? Layout::NONE;
                 if ($child !== Layout::NONE) {
-                    if ($current[Layout::NODE_PARAM] !== Layout::NONE || $current[Layout::NODE_CATCH] !== []) {
+                    if (
+                        $current[Layout::NODE_PARAM] !== Layout::NONE
+                        || $current[Layout::NODE_CATCH] !== Layout::NONE
+                    ) {
                         $stack[] = [$node, $index, self::PARAM, $paramCount];
                     }
 
@@ -169,7 +175,7 @@ final readonly class Matcher
                 $param = $current[Layout::NODE_PARAM];
                 $segment = $segments[$index];
                 if ($param !== Layout::NONE && $segment !== '') {
-                    if ($current[Layout::NODE_CATCH] !== []) {
+                    if ($current[Layout::NODE_CATCH] !== Layout::NONE) {
                         $stack[] = [$node, $index, self::CATCH, $paramCount];
                     }
 
@@ -185,12 +191,12 @@ final readonly class Matcher
 
             if ($stage === self::CATCH) {
                 $catch = $current[Layout::NODE_CATCH];
-                if ($catch !== []) {
+                if ($catch !== Layout::NONE) {
                     $rest = implode('/', array_slice($segments, $index));
                     if ($rest !== '' || $current[Layout::NODE_CATCH_MIN] === 0) {
                         $values[$paramCount] = $rest;
                         $match = $guard === null
-                            ? $this->result($catch[0], $values)
+                            ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
                             : $this->select($catch, $values, $guard, $rejected);
                         if ($match !== null) {
                             return $match;
@@ -211,14 +217,14 @@ final readonly class Matcher
     /**
      * Offers candidates to the guard in declaration order; the rejected ones are collected.
      *
-     * @param non-empty-list<int> $candidates
+     * @param int|non-empty-list<int> $candidates a single route id or several in declaration order
      * @param array<int, string> $values
      * @param Closure(mixed, array<string, string>): bool $guard
      * @param list<int> $rejected
      */
-    private function select(array $candidates, array $values, Closure $guard, array &$rejected): ?RouteMatch
+    private function select(int|array $candidates, array $values, Closure $guard, array &$rejected): ?RouteMatch
     {
-        foreach ($candidates as $routeId) {
+        foreach (is_int($candidates) ? [$candidates] : $candidates as $routeId) {
             $match = $this->result($routeId, $values);
             if ($guard($match->route, $match->params)) {
                 return $match;
