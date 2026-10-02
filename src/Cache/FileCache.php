@@ -23,7 +23,6 @@ use function rtrim;
 use function sprintf;
 use function strlen;
 use function strspn;
-use function substr;
 use function unlink;
 
 /**
@@ -97,7 +96,7 @@ final class FileCache implements RouteCache
 
     /**
      * The file a key is stored in, e.g. "routes-v2" => "<directory>/routes-v2.php" and
-     * "tenant/a" => "<directory>/tenant_a~1f3c8a2b.php".
+     * "tenant/a" => "<directory>/tenant_a~48da3de1.php".
      */
     public function file(string $key): string
     {
@@ -112,6 +111,6 @@ final class FileCache implements RouteCache
 
         $readable = (string) preg_replace('/[^A-Za-z0-9._-]+/', replacement: '_', subject: $key);
 
-        return $readable . '~' . substr(hash('xxh128', $key), offset: 0, length: 8);
+        return $readable . '~' . hash('xxh32', $key);
     }
 }
