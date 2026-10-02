@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SilenZ\Segmatch;
 
-use Closure;
 use InvalidArgumentException;
 use SilenZ\Segmatch\Internal\Layout;
 
@@ -112,10 +111,12 @@ final readonly class Matcher
      * Guards may be called several times per match, so they must be cheap and free of side effects.
      *
      * @param string $path request path without query string, starting with "/"
-     * @param null|Closure(mixed, array<string, string>): bool $guard receives route metadata and
-     *     URL-decoded parameters, returns whether the route applies
+     * @param null|false|callable(mixed, array<string, string>): bool $guard receives route metadata
+     *     and URL-decoded parameters, returns whether the route applies; `false` rejects every
+     *     candidate without being called (see {@see matchAll()}); `null` skips guarding entirely so
+     *     the first declared route wins
      */
-    public function match(string $path, ?Closure $guard = null): RouteMatch|NoMatch
+    public function match(string $path, callable|false|null $guard = null): RouteMatch|NoMatch
     {
         /** @var list<RouteMatch> $rejected */
         $rejected = [];
@@ -273,6 +274,22 @@ final readonly class Matcher
     }
 
     /**
+     * Every candidate route for a path, rejected, e.g. to build a 405's `Allow` header without
+     * matching for a specific request. Equivalent to `match($path, false)`, unwrapped.
+     *
+     * @param string $path request path without query string, starting with "/"
+     *
+     * @return list<RouteMatch>
+     */
+    public function matchAll(string $path): array
+    {
+        /** @var NoMatch */
+        $result = $this->match($path, false);
+
+        return $result->rejected;
+    }
+
+    /**
      * Splits a catch table entry into its route id(s) and whether it needs a non-empty rest
      * ({name+}). The {name+} marker is an array ending in a literal `true`, which a plain id or
      * id list can never equal, so the two shapes can't be confused.
@@ -295,14 +312,15 @@ final readonly class Matcher
      *
      * @param int|non-empty-list<int> $candidates a single route id or several in declaration order
      * @param array<int, string> $values
-     * @param Closure(mixed, array<string, string>): bool $guard
+     * @param false|callable(mixed, array<string, string>): bool $guard `false` rejects every candidate
+     *     without calling it, see {@see matchAll()}
      * @param list<RouteMatch> $rejected
      */
-    private function select(int|array $candidates, array $values, Closure $guard, array &$rejected): ?RouteMatch
+    private function select(int|array $candidates, array $values, callable|false $guard, array &$rejected): ?RouteMatch
     {
         foreach (is_int($candidates) ? [$candidates] : $candidates as $routeId) {
             $match = $this->result($routeId, $values);
-            if ($guard($match->route, $match->params)) {
+            if ($guard !== false && $guard($match->route, $match->params)) {
                 return $match;
             }
 

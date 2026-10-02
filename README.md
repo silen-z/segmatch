@@ -183,42 +183,30 @@ $router = new Router(
 
 ### Guards: methods and your own conditions
 
-A route's conditions are stored with it as *guards*:
-- its HTTP methods become a `MethodGuard` (`any()` routes get none),
-- `->guard(MyGuard::class, $config)` adds your own.
+A route's HTTP methods are stored with it directly, not as a guard (`any()` routes get none).
+`->guard(MyGuard::class, $config)` adds a condition of your own on top.
 
 There's deliberately no built-in parameter validation such as regex constraints: check parameter
 values in the controller. If a route really must be skipped for some values, so that another
 route can take the request, write a guard for it.
 
-Match with `Guards::for()`, which runs every candidate route's guards against the request:
-
-```php
-use SilenZ\Segmatch\Http\Guards;
-use SilenZ\Segmatch\Http\Request;
-use SilenZ\Segmatch\RouteMatch;
-
-$request = new Request($method, ['features' => $enabledFeatures]);   // attributes are optional
-$result = $router->match($path, Guards::for($request));              // or Guards::for($method)
-
-if ($result instanceof RouteMatch) {
-    // dispatch $result->route['handler'] through $result->route['middleware'] with $result->params
-} elseif (($allow = Guards::allowedMethods($result, $request)) !== []) {
-    // 405, with header Allow: implode(', ', $allow)
-} else {
-    // 404
-}
-```
+`Http\Dispatcher` (see [Dispatching](#dispatching)) is how you match: it checks the route's methods
+with `Http\Methods` — generic, container-free — and resolves and runs its guards, the only place
+that knows about the container.
 
 - **A rejected route doesn't exist for that request.** Matching continues, so a request falls
   through to another route: `GET /users/new` skips `POST /users/new` and reaches
   `GET /users/{id}`.
 - **`allowedMethods()` counts only routes rejected solely because of their method.** A route
   whose own guard fails, such as a feature switch, doesn't make a 405.
-- **A custom guard implements `Http\Guard`:** one static method,
-  `accepts(mixed $config, Request $request, array $params): bool`. The route stores only the
-  class name and the configuration, so both must be cacheable plain data. Anything request-specific
-  the guard needs goes into `Request::$attributes`, loaded once before matching.
+- **A custom guard implements `Http\Guard`:** one method,
+  `accepts(mixed $config, ServerRequestInterface $request, array $params): bool`. The route stores
+  only the class name and the configuration, so both must be cacheable plain data; the guard
+  instance itself never is. Anything request-specific the guard needs goes into the request's PSR-7
+  attributes (`$request->getAttribute(...)`), loaded once before matching.
+- **Guards are resolved per match, not stored statically.** `$container?->get($guardClass) ?? new
+  $guardClass()`, the same way an application resolves `$result->handler` — a guard with
+  constructor dependencies needs a container; a plain one doesn't.
 - **Guards decide whether a route applies, never who is asking.** Authentication and permissions
   belong to middleware, which runs after matching.
 
@@ -231,9 +219,9 @@ Each route's metadata, as returned in `RouteMatch::$route`:
     'name' => 'users.show',                      // only when named
     'path' => '/api/users/{id}',                 // only when named, for URL generation
     'tags' => ['public'],                        // only when tagged
+    'methods' => ['GET'],                        // only for routes with methods (not any())
     'guards' => [                                // only when there are any, checked in this order
-        MethodGuard::class => ['GET'],
-        FeatureGuard::class => 'beta',            // a guard of your own
+        FeatureGuard::class => 'beta',
     ],
 ]
 ```
@@ -254,7 +242,7 @@ if (!in_array('public', $match->route['tags'] ?? [], true) && !$session->isLogge
 ### Dispatching
 
 `Http\Dispatcher` wraps the router and answers with one of three results, so you don't handle
-`RouteMatch`, `NoMatch` and `Guards` yourself:
+`RouteMatch`, `NoMatch`, methods and guards yourself:
 
 ```php
 use SilenZ\Segmatch\Http\Dispatcher;
@@ -262,8 +250,8 @@ use SilenZ\Segmatch\Http\Found;
 use SilenZ\Segmatch\Http\MethodNotAllowed;
 use SilenZ\Segmatch\Http\NotFound;
 
-$dispatcher = new Dispatcher($router);
-$result = $dispatcher->dispatch($request->getMethod(), $request->getUri()->getPath());
+$dispatcher = new Dispatcher($router, $container); // $container is a PSR-11 ContainerInterface, optional
+$result = $dispatcher->dispatch($request);
 
 match (true) {
     $result instanceof Found => $pipeline
@@ -274,15 +262,51 @@ match (true) {
 };
 ```
 
+- **`$request` is a PSR-7 `ServerRequestInterface`.** Both `dispatch()` and `allowedMethods()` take
+  the path from `$request->getUri()->getPath()`.
+- **`$container` resolves a guard class to an instance**, e.g. `$container->get(...)`, the same way
+  an application resolves `$result->handler`. Without one, guards are built with a plain
+  `new $guard()`.
 - **`Found`** has `handler`, `params`, `middleware`, `name`, `methods` (`null` for `any()` routes)
   and `tags`.
 - **`MethodNotAllowed`** has `allowed`, e.g. `['GET', 'HEAD', 'PUT']`.
 - **HEAD matches GET routes automatically.** A route declared for HEAD itself still wins.
-- **OPTIONS isn't routed automatically.** `$dispatcher->allowedMethods('/users/42')` returns the
-  list for building a CORS or OPTIONS response. `any()` routes aren't listed.
-- **Request attributes for custom guards:** pass a `Request` instead of the method,
-  `dispatch(new Request($method, ['features' => $features]), $path)`, and the attributes as the
-  second argument of `allowedMethods()`.
+- **OPTIONS isn't routed automatically.** `$dispatcher->allowedMethods($request)` returns the list
+  for building a CORS or OPTIONS response for `$request`'s path, running guards against it with its
+  method replaced by OPTIONS. `any()` routes aren't listed.
+- **Request attributes for custom guards:** PSR-7's own `$request->withAttribute($name, $value)`,
+  read back by the guard with `$request->getAttribute($name)`.
+
+### Handling: a PSR-15 stack via Relay
+
+`handle()` goes one step further than `dispatch()`: it runs the route's middleware and handler
+itself, as one PSR-15 stack built with [Relay](https://relayphp.com/), and always returns a
+response:
+
+```php
+use Psr\Http\Message\ResponseFactoryInterface;
+use SilenZ\Segmatch\Http\Dispatcher;
+
+// $container resolves guards, middleware and handlers; $responseFactory builds 404/405 responses
+$dispatcher = new Dispatcher($router, $container, $responseFactory);
+$response = $dispatcher->handle($request); // ResponseInterface, always
+```
+
+- **Middleware and the handler aren't opaque here.** Each middleware entry must resolve (via
+  `$container->get(...)`, or a plain `new $entry()` without a container — the same rule as guards)
+  to a `Psr\Http\Server\MiddlewareInterface`; the handler must resolve to a
+  `Psr\Http\Server\RequestHandlerInterface`. A `[Class::class, 'method']` handler doesn't fit this
+  shape; use `dispatch()` and your own pipeline for those.
+- **Route parameters become request attributes** (`$request->getAttribute('id')`) before the stack
+  runs, since PSR-15 handlers take only the request.
+- **`$responseFactory`** (a PSR-17 `ResponseFactoryInterface`, given to the constructor) builds the
+  404 and 405 responses; a 405 gets the `Allow` header `allowedMethods()` would compute. Calling
+  `handle()` on a dispatcher built without one throws.
+- **Still an addition, not a replacement.** `dispatch()` keeps returning `Found`/`MethodNotAllowed`/
+  `NotFound` unchanged, for applications that want to run their own pipeline instead.
+- **`Dispatcher` implements `Psr\Http\Server\RequestHandlerInterface`.** `handle()`'s signature is
+  exactly that interface's, so a `Dispatcher` can be dropped in anywhere a PSR-15 handler is
+  expected: the terminal entry of an application-wide Relay queue, a framework's fallback handler.
 
 ### URL generation
 

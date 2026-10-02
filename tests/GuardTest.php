@@ -232,4 +232,45 @@ final class GuardTest extends TestCase
 
         static::assertSame(0, $calls);
     }
+
+    public function testFalseGuardRejectsEveryCandidate(): void
+    {
+        $matcher = self::matcher([
+            ['/users', ['name' => 'list', 'methods' => ['GET']]],
+            ['/users', ['name' => 'create', 'methods' => ['POST']]],
+        ]);
+
+        static::assertSame(['list', 'create'], self::rejectedNames($matcher->match('/users', false)));
+    }
+
+    public function testFalseGuardIsNeverInvokedAsACallable(): void
+    {
+        $matcher = self::matcher([['/users/{id}', ['name' => 'show']]]);
+
+        // `false` isn't callable; calling it like a guard closure would throw.
+        $result = $matcher->match('/users/1', false);
+
+        static::assertSame(['show'], self::rejectedNames($result));
+    }
+
+    public function testMatchAllReturnsEveryCandidateAcrossBranches(): void
+    {
+        $matcher = self::matcher([
+            ['/foo/bar', ['name' => 'static']],
+            ['/foo/{id}', ['name' => 'param']],
+            ['/foo/{rest+}', ['name' => 'catch']],
+        ]);
+
+        static::assertSame(
+            ['static', 'param', 'catch'],
+            array_map(static fn(RouteMatch $match): string => self::metadata($match->route)['name'], $matcher->matchAll('/foo/bar')),
+        );
+    }
+
+    public function testMatchAllIsEmptyForAnUnknownPath(): void
+    {
+        $matcher = self::matcher([['/users', ['name' => 'list']]]);
+
+        static::assertSame([], $matcher->matchAll('/nope'));
+    }
 }

@@ -164,4 +164,24 @@ final class RouterTest extends TestCase
 
         static::assertSame(['methods' => ['POST']], self::route($result));
     }
+
+    public function testMatchAllReturnsEveryCandidateForThePath(): void
+    {
+        $router = new Router(static fn(): array => [
+            new RouteDefinition('/users', ['methods' => ['GET']]),
+            new RouteDefinition('/users', ['methods' => ['POST']]),
+        ]);
+
+        static::assertSame(
+            [['methods' => ['GET']], ['methods' => ['POST']]],
+            array_map(static fn(RouteMatch $match): mixed => $match->route, $router->matchAll('/users')),
+        );
+    }
+
+    public function testMatchAllIsEmptyForAnUnknownPath(): void
+    {
+        $router = new Router(static fn(): array => [new RouteDefinition('/users', 'list')]);
+
+        static::assertSame([], $router->matchAll('/nope'));
+    }
 }
