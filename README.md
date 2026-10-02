@@ -229,6 +229,7 @@ Each route's metadata, as returned in `RouteMatch::$route`:
     'handler' => [UserController::class, 'show'],
     'middleware' => ['api', 'auth'],
     'name' => 'users.show',                      // only when named
+    'path' => '/api/users/{id}',                 // only when named, for URL generation
     'tags' => ['public'],                        // only when tagged
     'guards' => [                                // only when there are any, checked in this order
         MethodGuard::class => ['GET'],
@@ -249,6 +250,64 @@ if (!in_array('public', $match->route['tags'] ?? [], true) && !$session->isLogge
     return new Response(401);
 }
 ```
+
+### Dispatching
+
+`Http\Dispatcher` wraps the router and answers with one of three results, so you don't handle
+`RouteMatch`, `NoMatch` and `Guards` yourself:
+
+```php
+use SilenZ\Segmatch\Http\Dispatcher;
+use SilenZ\Segmatch\Http\Found;
+use SilenZ\Segmatch\Http\MethodNotAllowed;
+use SilenZ\Segmatch\Http\NotFound;
+
+$dispatcher = new Dispatcher($router);
+$result = $dispatcher->dispatch($request->getMethod(), $request->getUri()->getPath());
+
+match (true) {
+    $result instanceof Found => $pipeline
+        ->through($result->middleware)                      // ['api', 'auth']
+        ->then(fn () => $container->call($result->handler, $result->params)),
+    $result instanceof MethodNotAllowed => new Response(405, ['Allow' => implode(', ', $result->allowed)]),
+    $result instanceof NotFound => new Response(404),
+};
+```
+
+- **`Found`** has `handler`, `params`, `middleware`, `name`, `methods` (`null` for `any()` routes)
+  and `tags`.
+- **`MethodNotAllowed`** has `allowed`, e.g. `['GET', 'HEAD', 'PUT']`.
+- **HEAD matches GET routes automatically.** A route declared for HEAD itself still wins.
+- **OPTIONS isn't routed automatically.** `$dispatcher->allowedMethods('/users/42')` returns the
+  list for building a CORS or OPTIONS response. `any()` routes aren't listed.
+- **Request attributes for custom guards:** pass a `Request` instead of the method,
+  `dispatch(new Request($method, ['features' => $features]), $path)`, and the attributes as the
+  second argument of `allowedMethods()`.
+
+### URL generation
+
+`Http\UrlGenerator` builds URLs for named routes:
+
+```php
+use SilenZ\Segmatch\Http\UrlGenerator;
+
+$urls = new UrlGenerator($router);
+$urls->url('users.show', ['id' => 42]);                // "/api/users/42"
+$urls->url('users.show', ['id' => 42, 'tab' => 'x']);  // "/api/users/42?tab=x" (extra params become the query)
+$urls->url('users.show', []);                          // throws: missing parameter "id"
+```
+
+- **Every placeholder is required.** Values are `rawurlencode`d, so the generated URL matches its
+  route again with the same parameters. A catch-all keeps its slashes:
+  `['path' => 'docs/a b.pdf']` gives `/files/docs/a%20b.pdf`.
+- **Empty values:** `{id}` and `{path+}` can't be empty. An empty `{path*}` drops its slash:
+  `/assets`, not `/assets/`.
+- **Values** may be strings, ints or `Stringable`s. Query values are anything `http_build_query()`
+  takes.
+- **Errors** throw `Exception\UrlGenerationException`: an unknown name, or a missing, empty or
+  unsupported parameter.
+- **Works from the cache.** Named routes keep their path in the metadata, so URLs can be generated
+  without declaring the routes. The index of names is built on the first `url()` call.
 
 Compile-time errors include duplicate route names, empty names or tags, invalid prefixes or
 methods, and guard classes that don't implement `Http\Guard`.

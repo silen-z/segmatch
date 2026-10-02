@@ -23,3 +23,6 @@ halstead = { exclude = ["src/Matcher.php", "tests/", "benchmarks/"] }
 # Data-provider heavy test classes and benchmark classes legitimately have many methods, and so
 # does Http\Routes with one helper per HTTP method.
 too-many-methods = { exclude = ["tests/", "benchmarks/", "src/Http/Routes.php"] }
+
+# Http\Found is a value object with one promoted property per field of the matched route.
+excessive-parameter-list = { exclude = ["src/Http/Found.php"] }

@@ -83,6 +83,17 @@ final readonly class Matcher
     }
 
     /**
+     * The metadata of every route, by route id (declaration order), e.g. for building an index of
+     * the routes by name.
+     *
+     * @return list<mixed>
+     */
+    public function metadata(): array
+    {
+        return $this->metadata;
+    }
+
+    /**
      * Finds the route for a path.
      *
      * Without a guard, the first declared route of the best path wins. With a guard, every candidate
