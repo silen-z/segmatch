@@ -8,11 +8,11 @@ use Closure;
 use InvalidArgumentException;
 use SilenZ\Segmatch\Internal\Layout;
 
-use function array_pop;
 use function array_slice;
 use function count;
 use function explode;
 use function implode;
+use function is_array;
 use function is_int;
 use function rawurldecode;
 use function sprintf;
@@ -38,17 +38,23 @@ final readonly class Matcher
     /** @var array<array-key, int|non-empty-list<int>> full path => route id(s), for routes without parameters */
     private array $static;
 
-    /** @var array<int, array<array-key, int>> node => static segment => child node */
+    /**
+     * @var array<int, array<array-key, int>> node => static segment => child node, negative
+     *     (`-id - 1`) when the node also has a {param} edge or a catch-all to fall back to
+     */
     private array $edges;
 
-    /** @var array<int, int> node => child node of the {param} edge */
+    /**
+     * @var array<int, int> node => child node of the {param} edge, negative (`-id - 1`) when the
+     *     node also has a catch-all to fall back to
+     */
     private array $param;
 
-    /** @var array<int, int|non-empty-list<int>> node => route id(s) of the catch-all edge */
+    /**
+     * @var array<int, int|non-empty-list<int>|array{int|non-empty-list<int>, true}> node => route
+     *     id(s) of the catch-all edge, or [ids, true] when it needs a non-empty rest ({name+})
+     */
     private array $catch;
-
-    /** @var array<int, true> nodes whose catch-all needs a non-empty rest ({name+}) */
-    private array $catchRequired;
 
     /** @var array<int, int|non-empty-list<int>> node => route id(s) ending there */
     private array $routes;
@@ -76,7 +82,6 @@ final readonly class Matcher
         $this->edges = $compiled['edges'];
         $this->param = $compiled['param'];
         $this->catch = $compiled['catch'];
-        $this->catchRequired = $compiled['catchRequired'];
         $this->routes = $compiled['routes'];
         $this->metadata = $compiled['metadata'];
         $this->paramNames = $compiled['paramNames'];
@@ -145,8 +150,17 @@ final readonly class Matcher
         /** @var array<int, string> $values parameter values by slot; slots past $paramCount are stale */
         $values = [];
         $paramCount = 0;
-        /** @var list<array{int, int, int, int}> $stack node, segment index, next stage, param count */
-        $stack = [];
+        // Backtrack frames (node, segment index, next stage, param count) as parallel arrays instead
+        // of a stack of tuples, so a push doesn't allocate a new small array.
+        /** @var list<int> $stackNode */
+        $stackNode = [];
+        /** @var list<int> $stackIndex */
+        $stackIndex = [];
+        /** @var list<int> $stackStage */
+        $stackStage = [];
+        /** @var list<int> $stackParamCount */
+        $stackParamCount = [];
+        $stackSize = 0;
 
         $node = 0;
         $index = 0;
@@ -167,7 +181,11 @@ final readonly class Matcher
                     }
 
                     $catch = $catches[$node] ?? Layout::NONE;
-                    if ($catch !== Layout::NONE && !($this->catchRequired[$node] ?? false)) {
+                    if ($catch !== Layout::NONE) {
+                        [$catch, $required] = self::catchIds($catch);
+                    }
+
+                    if ($catch !== Layout::NONE && !$required) {
                         $values[$paramCount] = '';
                         $match = $guard === null
                             ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
@@ -184,11 +202,13 @@ final readonly class Matcher
             if ($stage === self::STATIC) {
                 $child = $edges[$node][$segments[$index]] ?? Layout::NONE;
                 if ($child !== Layout::NONE) {
-                    if (
-                        ($paramEdges[$node] ?? Layout::NONE) !== Layout::NONE
-                        || ($catches[$node] ?? Layout::NONE) !== Layout::NONE
-                    ) {
-                        $stack[] = [$node, $index, self::PARAM, $paramCount];
+                    if ($child < 0) {
+                        $child = -$child - 1;
+                        $stackNode[$stackSize] = $node;
+                        $stackIndex[$stackSize] = $index;
+                        $stackStage[$stackSize] = self::PARAM;
+                        $stackParamCount[$stackSize] = $paramCount;
+                        $stackSize++;
                     }
 
                     $node = $child;
@@ -204,8 +224,13 @@ final readonly class Matcher
                 $param = $paramEdges[$node] ?? Layout::NONE;
                 $segment = $segments[$index];
                 if ($param !== Layout::NONE && $segment !== '') {
-                    if (($catches[$node] ?? Layout::NONE) !== Layout::NONE) {
-                        $stack[] = [$node, $index, self::CATCH, $paramCount];
+                    if ($param < 0) {
+                        $param = -$param - 1;
+                        $stackNode[$stackSize] = $node;
+                        $stackIndex[$stackSize] = $index;
+                        $stackStage[$stackSize] = self::CATCH;
+                        $stackParamCount[$stackSize] = $paramCount;
+                        $stackSize++;
                     }
 
                     $values[$paramCount++] = $segment;
@@ -221,8 +246,9 @@ final readonly class Matcher
             if ($stage === self::CATCH) {
                 $catch = $catches[$node] ?? Layout::NONE;
                 if ($catch !== Layout::NONE) {
+                    [$catch, $required] = self::catchIds($catch);
                     $rest = implode('/', array_slice($segments, $index));
-                    if ($rest !== '' || !($this->catchRequired[$node] ?? false)) {
+                    if ($rest !== '' || !$required) {
                         $values[$paramCount] = $rest;
                         $match = $guard === null
                             ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
@@ -234,13 +260,34 @@ final readonly class Matcher
                 }
             }
 
-            $frame = array_pop($stack);
-            if ($frame === null) {
+            if ($stackSize === 0) {
                 return $this->miss($rejected);
             }
 
-            [$node, $index, $stage, $paramCount] = $frame;
+            $stackSize--;
+            $node = $stackNode[$stackSize];
+            $index = $stackIndex[$stackSize];
+            $stage = $stackStage[$stackSize];
+            $paramCount = $stackParamCount[$stackSize];
         }
+    }
+
+    /**
+     * Splits a catch table entry into its route id(s) and whether it needs a non-empty rest
+     * ({name+}). The {name+} marker is an array ending in a literal `true`, which a plain id or
+     * id list can never equal, so the two shapes can't be confused.
+     *
+     * @param int|non-empty-list<int>|array{int|non-empty-list<int>, true} $catch
+     *
+     * @return array{int|non-empty-list<int>, bool}
+     */
+    private static function catchIds(int|array $catch): array
+    {
+        if (is_array($catch) && ($catch[1] ?? null) === true) {
+            return [$catch[0], true];
+        }
+
+        return [$catch, false];
     }
 
     /**

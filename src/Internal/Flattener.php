@@ -42,7 +42,6 @@ final class Flattener
             'edges' => [],
             'param' => [],
             'catch' => [],
-            'catchRequired' => [],
             'routes' => [],
             'metadata' => [],
             'paramNames' => [],
@@ -50,9 +49,16 @@ final class Flattener
 
         [$nodes, $ids] = self::number($root);
         foreach ($nodes as $id => $node) {
+            $hasParam = $node->param !== null;
+            $hasCatch = $node->catchRoutes !== [];
+
+            // A static match on this node may still need to fall back to its {param} or catch-all
+            // edge, so the matcher must push a backtrack frame. Flagging that in the sign of the
+            // child id itself (see Layout) spares it a lookup into a separate table for every segment.
             $edges = [];
             foreach ($node->static as $segment => $child) {
-                $edges[$segment] = $ids[spl_object_id($child)];
+                $childId = $ids[spl_object_id($child)];
+                $edges[$segment] = $hasParam || $hasCatch ? self::encode($childId) : $childId;
             }
 
             if ($edges !== []) {
@@ -60,14 +66,17 @@ final class Flattener
             }
 
             if ($node->param !== null) {
-                $compiled['param'][$id] = $ids[spl_object_id($node->param)];
+                $childId = $ids[spl_object_id($node->param)];
+                // Same trick: a miss past the {param} child may still fall back to this node's
+                // catch-all edge.
+                $compiled['param'][$id] = $hasCatch ? self::encode($childId) : $childId;
             }
 
             if ($node->catchRoutes !== []) {
-                $compiled['catch'][$id] = self::ids($node->catchRoutes);
-                if ($node->catchType === SegmentType::CatchAllOne) {
-                    $compiled['catchRequired'][$id] = true;
-                }
+                $catchIds = self::ids($node->catchRoutes);
+                $compiled['catch'][$id] = $node->catchType === SegmentType::CatchAllOne
+                    ? [$catchIds, true]
+                    : $catchIds;
             }
 
             if ($node->routes !== []) {
@@ -132,5 +141,15 @@ final class Flattener
     private static function ids(array $ids): int|array
     {
         return count($ids) === 1 ? $ids[0] : $ids;
+    }
+
+    /**
+     * Flags a child node id as "needs a backtrack frame" by storing it negative. Child ids are
+     * always >= 1 (node 0 is the root and never a child), so `-id - 1` is always <= -2 and never
+     * collides with {@see Layout::NONE} (-1).
+     */
+    private static function encode(int $childId): int
+    {
+        return -$childId - 1;
     }
 }

@@ -92,7 +92,7 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 6,
+                'version' => 7,
                 // Parameterless routes are looked up by full path. A single route is stored as its
                 // id; routes sharing a path as a list in declaration order.
                 'static' => [
@@ -107,11 +107,41 @@ final class CompilerTest extends TestCase
                     1 => ['users' => 2, 'files' => 3],
                 ],
                 'param' => [2 => 4],
-                'catch' => [3 => 3],
-                'catchRequired' => [3 => true],
+                'catch' => [3 => [3, true]],
                 'routes' => [4 => [1, 6]],
                 'metadata' => ['users', 'user', 'health', 'files', 'about', 'create-user', 'user-by-name'],
                 'paramNames' => [1 => ['id'], 3 => ['path'], 6 => ['name']],
+            ],
+            Compiler::compile($routes),
+        );
+    }
+
+    public function testFlagsBacktrackInChildNodeIds(): void
+    {
+        $routes = [
+            new RouteDefinition('/items/archive/{id}', 'archived'),
+            new RouteDefinition('/items/{id}', 'item'),
+            new RouteDefinition('/items/{rest*}', 'catch'),
+        ];
+
+        static::assertSame(
+            [
+                'version' => 7,
+                'static' => [],
+                // Node 1 ("items") has both a {id} param edge and a catch-all, so a miss past its
+                // static "archive" edge (to node 2) must still try them: the child id is stored as
+                // -2 - 1 = -3. Node 2 only has a param edge of its own (to node 4, {id} again), so
+                // its child id (4) is stored as-is.
+                'edges' => [
+                    0 => ['items' => 1],
+                    1 => ['archive' => -3],
+                ],
+                // Node 1's param edge (to node 3) carries the same flag for its catch-all: -3 - 1 = -4.
+                'param' => [1 => -4, 2 => 4],
+                'catch' => [1 => 2],
+                'routes' => [3 => 1, 4 => 0],
+                'metadata' => ['archived', 'item', 'catch'],
+                'paramNames' => [0 => ['id'], 1 => ['id'], 2 => ['rest']],
             ],
             Compiler::compile($routes),
         );
