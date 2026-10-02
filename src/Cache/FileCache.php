@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SilenZ\Segmatch\Cache;
 
-use Closure;
 use RuntimeException;
 use SilenZ\Segmatch\Internal\Exporter;
 
@@ -20,9 +19,7 @@ use function opcache_invalidate;
 use function preg_replace;
 use function random_bytes;
 use function rename;
-use function restore_error_handler;
 use function rtrim;
-use function set_error_handler;
 use function sprintf;
 use function strlen;
 use function strspn;
@@ -70,25 +67,23 @@ final class FileCache implements RouteCache
     public function set(string $key, array $compiled): void
     {
         $directory = $this->directory;
-        if (!is_dir($directory)) {
-            self::attempt(
-                static fn(): bool => mkdir($directory, permissions: 0o777, recursive: true) || is_dir($directory),
-                sprintf('Unable to create route cache directory "%s"', $directory),
-            );
+        // @mago-expect lint:no-error-control-operator - the failure is handled below; we don't need the warning text
+        if (!is_dir($directory) && !@mkdir($directory, permissions: 0o777, recursive: true) && !is_dir($directory)) {
+            throw new RuntimeException(sprintf('Unable to create route cache directory "%s".', $directory));
         }
 
         $file = $this->file($key);
         $temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
-        self::attempt(
-            static fn(): bool => file_put_contents($temporary, Exporter::export($compiled)) !== false,
-            sprintf('Unable to write route cache file "%s"', $temporary),
-        );
+        // @mago-expect lint:no-error-control-operator - the failure is handled below; we don't need the warning text
+        if (@file_put_contents($temporary, Exporter::export($compiled)) === false) {
+            throw new RuntimeException(sprintf('Unable to write route cache file "%s".', $temporary));
+        }
 
         try {
-            self::attempt(
-                static fn(): bool => rename($temporary, $file),
-                sprintf('Unable to move route cache file into "%s"', $file),
-            );
+            // @mago-expect lint:no-error-control-operator - the failure is handled below; we don't need the warning text
+            if (@rename($temporary, $file) === false) {
+                throw new RuntimeException(sprintf('Unable to move route cache file into "%s".', $file));
+            }
         } finally {
             if (is_file($temporary)) {
                 unlink($temporary);
@@ -118,30 +113,5 @@ final class FileCache implements RouteCache
         $readable = (string) preg_replace('/[^A-Za-z0-9._-]+/', replacement: '_', subject: $key);
 
         return $readable . '~' . substr(hash('xxh128', $key), offset: 0, length: 8);
-    }
-
-    /**
-     * Runs a filesystem operation, turning a `false` result into an exception carrying PHP's warning.
-     *
-     * @param Closure(): bool $operation
-     */
-    private static function attempt(Closure $operation, string $failure): void
-    {
-        $warning = null;
-        set_error_handler(static function (int $_level, string $message) use (&$warning): bool {
-            $warning = $message;
-
-            return true;
-        });
-
-        try {
-            $result = $operation();
-        } finally {
-            restore_error_handler();
-        }
-
-        if ($result === false) {
-            throw new RuntimeException($warning !== null ? $failure . ': ' . $warning : $failure . '.');
-        }
     }
 }
