@@ -124,6 +124,20 @@ final class GuardTest extends TestCase
         static::assertSame(['list', 'create'], self::rejectedNames($matcher->match('/users', self::method('DELETE'))));
     }
 
+    public function testRejectedRoutesSharingACatchAllAreReportedForA405(): void
+    {
+        $matcher = self::matcher([
+            ['/files/{path+}', ['name' => 'download', 'methods' => ['GET']]],
+            ['/files/{path+}', ['name' => 'upload', 'methods' => ['PUT']]],
+            ['/files/{path+}', ['name' => 'delete', 'methods' => ['DELETE']]],
+        ]);
+
+        static::assertSame(
+            ['download', 'upload', 'delete'],
+            self::rejectedNames($matcher->match('/files/a.txt', self::method('PATCH'))),
+        );
+    }
+
     public function testUnknownPathIsAPlain404(): void
     {
         $matcher = self::matcher([['/users', ['name' => 'list', 'methods' => ['GET']]]]);

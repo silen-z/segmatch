@@ -184,4 +184,45 @@ final class RouterTest extends TestCase
 
         static::assertSame([], $router->matchAll('/nope'));
     }
+
+    public function testDefinitionsReturnsTheRoutesAsDeclared(): void
+    {
+        $router = new Router(static fn(): array => [
+            new RouteDefinition('/users', 'list'),
+            new RouteDefinition('/users/{id}', 'show'),
+        ]);
+
+        $definitions = [...$router->definitions()];
+
+        static::assertCount(2, $definitions);
+        static::assertSame('/users', $definitions[0]->path);
+        static::assertSame('/users/{id}', $definitions[1]->path);
+    }
+
+    public function testDefinitionsCallsTheRoutesCallableEveryTime(): void
+    {
+        $calls = new ArrayObject();
+        $router = new Router(static function () use ($calls): array {
+            $calls->append(true);
+
+            return [new RouteDefinition('/a', 'a')];
+        });
+
+        [...$router->definitions()];
+        [...$router->definitions()];
+
+        static::assertCount(2, $calls);
+    }
+
+    public function testDefinitionsIgnoresTheCache(): void
+    {
+        $cache = self::memoryCache();
+        $router = new Router(static fn(): array => [new RouteDefinition('/a', 'first')], $cache);
+        $router->match('/a'); // populates the cache
+
+        $laterRouter = new Router(static fn(): array => [new RouteDefinition('/a', 'second')], $cache);
+
+        static::assertSame('first', self::route($laterRouter->match('/a')));
+        static::assertSame('second', [...$laterRouter->definitions()][0]->metadata);
+    }
 }

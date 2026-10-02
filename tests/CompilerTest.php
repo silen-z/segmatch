@@ -92,7 +92,7 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 7,
+                'version' => 9,
                 // Parameterless routes are looked up by full path. A single route is stored as its
                 // id; routes sharing a path as a list in declaration order.
                 'static' => [
@@ -107,7 +107,7 @@ final class CompilerTest extends TestCase
                     1 => ['users' => 2, 'files' => 3],
                 ],
                 'param' => [2 => 4],
-                'catch' => [3 => [3, true]],
+                'catch' => [3 => [true, 3]],
                 'routes' => [4 => [1, 6]],
                 'metadata' => ['users', 'user', 'health', 'files', 'about', 'create-user', 'user-by-name'],
                 'paramNames' => [1 => ['id'], 3 => ['path'], 6 => ['name']],
@@ -126,7 +126,7 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 7,
+                'version' => 9,
                 'static' => [],
                 // Node 1 ("items") has both a {id} param edge and a catch-all, so a miss past its
                 // static "archive" edge (to node 2) must still try them: the child id is stored as
@@ -138,12 +138,27 @@ final class CompilerTest extends TestCase
                 ],
                 // Node 1's param edge (to node 3) carries the same flag for its catch-all: -3 - 1 = -4.
                 'param' => [1 => -4, 2 => 4],
-                'catch' => [1 => 2],
+                'catch' => [1 => [false, 2]],
                 'routes' => [3 => 1, 4 => 0],
                 'metadata' => ['archived', 'item', 'catch'],
                 'paramNames' => [0 => ['id'], 1 => ['id'], 2 => ['rest']],
             ],
             Compiler::compile($routes),
         );
+    }
+
+    public function testFlattensSeveralRoutesSharingACatchAll(): void
+    {
+        $routes = [
+            new RouteDefinition('/files/{a*}', 'download'),
+            new RouteDefinition('/files/{b*}', 'upload'),
+            new RouteDefinition('/files/{c*}', 'delete'),
+        ];
+
+        $compiled = Compiler::compile($routes);
+
+        // Node 1 ("files") carries all three route ids after the "needs a non-empty rest" flag,
+        // flattened into the same list rather than nested as [false, [0, 1, 2]].
+        static::assertSame([false, 0, 1, 2], $compiled['catch'][1]);
     }
 }

@@ -20,6 +20,7 @@ use function spl_object_id;
  * @internal
  *
  * @psalm-import-type CompiledRoutes from Compiler
+ * @psalm-import-type RouteIds from Compiler
  */
 final class Flattener
 {
@@ -73,10 +74,7 @@ final class Flattener
             }
 
             if ($node->catchRoutes !== []) {
-                $catchIds = self::ids($node->catchRoutes);
-                $compiled['catch'][$id] = $node->catchType === SegmentType::CatchAllOne
-                    ? [$catchIds, true]
-                    : $catchIds;
+                $compiled['catch'][$id] = [$node->catchType === SegmentType::CatchAllOne, ...$node->catchRoutes];
             }
 
             if ($node->routes !== []) {
@@ -136,7 +134,7 @@ final class Flattener
      *
      * @param non-empty-list<int> $ids
      *
-     * @return int|non-empty-list<int>
+     * @return RouteIds
      */
     private static function ids(array $ids): int|array
     {

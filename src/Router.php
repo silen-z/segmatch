@@ -61,6 +61,19 @@ final class Router
     }
 
     /**
+     * The routes as declared: full paths and metadata, uncompiled and never read from or written to
+     * the cache. Calls the routes callable every time, unlike {@see matcher()}; use it for tooling
+     * that needs the declarations themselves, e.g. an index of routes by name, or generating
+     * documentation, not for matching requests.
+     *
+     * @return iterable<mixed, RouteDefinition>
+     */
+    public function definitions(): iterable
+    {
+        return call_user_func($this->routes);
+    }
+
+    /**
      * The matcher for the routes, loaded from the cache or compiled on first use.
      */
     public function matcher(): Matcher
@@ -79,7 +92,7 @@ final class Router
             return $cached;
         }
 
-        $compiled = Compiler::compile(($this->routes)());
+        $compiled = Compiler::compile($this->definitions());
         $this->cache?->set($this->cacheKey, $compiled);
 
         return $compiled;

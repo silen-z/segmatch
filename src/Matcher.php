@@ -11,7 +11,6 @@ use function array_slice;
 use function count;
 use function explode;
 use function implode;
-use function is_array;
 use function is_int;
 use function rawurldecode;
 use function sprintf;
@@ -24,6 +23,8 @@ use function substr;
  * fails further down, the parameter and then the catch-all branch of the same node are tried.
  *
  * @psalm-import-type CompiledRoutes from Compiler
+ * @psalm-import-type RouteIds from Compiler
+ * @psalm-import-type CatchEntry from Compiler
  */
 final readonly class Matcher
 {
@@ -34,7 +35,7 @@ final readonly class Matcher
     private const int CATCH = 3;
     private const int EXHAUSTED = 4;
 
-    /** @var array<array-key, int|non-empty-list<int>> full path => route id(s), for routes without parameters */
+    /** @var array<array-key, RouteIds> full path => route id(s), for routes without parameters */
     private array $static;
 
     /**
@@ -50,12 +51,12 @@ final readonly class Matcher
     private array $param;
 
     /**
-     * @var array<int, int|non-empty-list<int>|array{int|non-empty-list<int>, true}> node => route
-     *     id(s) of the catch-all edge, or [ids, true] when it needs a non-empty rest ({name+})
+     * @var array<int, CatchEntry> node => its catch-all edge, flattened as [needs a non-empty rest
+     *     ({name+}, not {name*}), ...route ids]
      */
     private array $catch;
 
-    /** @var array<int, int|non-empty-list<int>> node => route id(s) ending there */
+    /** @var array<int, RouteIds> node => route id(s) ending there */
     private array $routes;
 
     /** @var list<mixed> route id => metadata */
@@ -128,7 +129,7 @@ final readonly class Matcher
                 return new RouteMatch($this->metadata[is_int($static) ? $static : $static[0]], []);
             }
 
-            $match = $this->select($static, [], $guard, $rejected);
+            $match = $this->select(is_int($static) ? [$static] : $static, [], $guard, $rejected);
             if ($match !== null) {
                 return $match;
             }
@@ -175,22 +176,18 @@ final readonly class Matcher
                     if ($routes !== Layout::NONE) {
                         $match = $guard === null
                             ? $this->result(is_int($routes) ? $routes : $routes[0], $values)
-                            : $this->select($routes, $values, $guard, $rejected);
+                            : $this->select(is_int($routes) ? [$routes] : $routes, $values, $guard, $rejected);
                         if ($match !== null) {
                             return $match;
                         }
                     }
 
                     $catch = $catches[$node] ?? Layout::NONE;
-                    if ($catch !== Layout::NONE) {
-                        [$catch, $required] = self::catchIds($catch);
-                    }
-
-                    if ($catch !== Layout::NONE && !$required) {
+                    if ($catch !== Layout::NONE && !$catch[0]) {
                         $values[$paramCount] = '';
                         $match = $guard === null
-                            ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
-                            : $this->select($catch, $values, $guard, $rejected);
+                            ? $this->result($catch[1], $values)
+                            : $this->select($catch, $values, $guard, $rejected, offset: 1);
                         if ($match !== null) {
                             return $match;
                         }
@@ -247,13 +244,12 @@ final readonly class Matcher
             if ($stage === self::CATCH) {
                 $catch = $catches[$node] ?? Layout::NONE;
                 if ($catch !== Layout::NONE) {
-                    [$catch, $required] = self::catchIds($catch);
                     $rest = implode('/', array_slice($segments, $index));
-                    if ($rest !== '' || !$required) {
+                    if ($rest !== '' || !$catch[0]) {
                         $values[$paramCount] = $rest;
                         $match = $guard === null
-                            ? $this->result(is_int($catch) ? $catch : $catch[0], $values)
-                            : $this->select($catch, $values, $guard, $rejected);
+                            ? $this->result($catch[1], $values)
+                            : $this->select($catch, $values, $guard, $rejected, offset: 1);
                         if ($match !== null) {
                             return $match;
                         }
@@ -290,35 +286,27 @@ final readonly class Matcher
     }
 
     /**
-     * Splits a catch table entry into its route id(s) and whether it needs a non-empty rest
-     * ({name+}). The {name+} marker is an array ending in a literal `true`, which a plain id or
-     * id list can never equal, so the two shapes can't be confused.
+     * Offers candidates to the guard in declaration order, starting at $offset; the rejected ones
+     * are collected. $offset lets a flattened {@see CatchEntry} be read in place, past its leading
+     * flag, without slicing it into a new array first.
      *
-     * @param int|non-empty-list<int>|array{int|non-empty-list<int>, true} $catch
-     *
-     * @return array{int|non-empty-list<int>, bool}
-     */
-    private static function catchIds(int|array $catch): array
-    {
-        if (is_array($catch) && ($catch[1] ?? null) === true) {
-            return [$catch[0], true];
-        }
-
-        return [$catch, false];
-    }
-
-    /**
-     * Offers candidates to the guard in declaration order; the rejected ones are collected.
-     *
-     * @param int|non-empty-list<int> $candidates a single route id or several in declaration order
+     * @param non-empty-list<int>|CatchEntry $candidates a list of ids, or (with $offset) a flattened
+     *     catch entry; callers normalize a single id into a one-element list first
      * @param array<int, string> $values
      * @param false|callable(mixed, array<string, string>): bool $guard `false` rejects every candidate
      *     without calling it, see {@see matchAll()}
      * @param list<RouteMatch> $rejected
      */
-    private function select(int|array $candidates, array $values, callable|false $guard, array &$rejected): ?RouteMatch
-    {
-        foreach (is_int($candidates) ? [$candidates] : $candidates as $routeId) {
+    private function select(
+        array $candidates,
+        array $values,
+        callable|false $guard,
+        array &$rejected,
+        int $offset = 0,
+    ): ?RouteMatch {
+        for ($i = $offset, $count = count($candidates); $i < $count; $i++) {
+            /** @var int $routeId */
+            $routeId = $candidates[$i];
             $match = $this->result($routeId, $values);
             if ($guard !== false && $guard($match->route, $match->params)) {
                 return $match;

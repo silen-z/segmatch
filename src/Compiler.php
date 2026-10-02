@@ -20,7 +20,20 @@ use function sprintf;
  * The output is plain data: it can be passed to the matcher directly or written to a PHP file
  * by a {@see Cache\RouteCache} and loaded back from it.
  *
- * @psalm-type CompiledRoutes = array{version: int, static: array<array-key, int|non-empty-list<int>>, edges: array<int, array<array-key, int>>, param: array<int, int>, catch: array<int, int|non-empty-list<int>|array{int|non-empty-list<int>, true}>, routes: array<int, int|non-empty-list<int>>, metadata: list<mixed>, paramNames: array<int, non-empty-list<string>>}
+ * @psalm-type RouteIds = int|non-empty-list<int> a single route id, or several in declaration order
+ * @psalm-type CatchEntry = non-empty-list<bool|int> a catch-all edge, flattened: index 0 is whether
+ *     it needs a non-empty rest ({name+}, not {name*}); every element after it is a route id, in
+ *     declaration order
+ * @psalm-type CompiledRoutes = array{
+ *     version: int,
+ *     static: array<array-key, RouteIds>,
+ *     edges: array<int, array<array-key, int>>,
+ *     param: array<int, int>,
+ *     catch: array<int, CatchEntry>,
+ *     routes: array<int, RouteIds>,
+ *     metadata: list<mixed>,
+ *     paramNames: array<int, non-empty-list<string>>
+ * }
  */
 final class Compiler
 {

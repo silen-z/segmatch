@@ -13,8 +13,8 @@ namespace SilenZ\Segmatch\Internal;
  *     'static'        => ['/users' => 4, '/' => [0, 1]], // full path => route id(s), parameterless routes
  *     'edges'         => [0 => ['users' => 1]],          // node => static segment => child node
  *     'param'         => [1 => 2],                       // node => child node of its {param} edge
- *     'catch'         => [3 => 7],                       // node => route id(s) of its catch-all edge,
- *                                                         // or [ids, true] when it's {name+}, not {name*}
+ *     'catch'         => [3 => [false, 7]],               // node => [needs a non-empty rest
+ *                                                         // ({name+}, not {name*}), ...route ids]
  *     'routes'        => [2 => 5],                       // node => route id(s) ending there
  *     'metadata'      => [[...], ...],                   // route id => the route's metadata
  *     'paramNames'    => [5 => ['id']],                  // route id => parameter names, capture order
@@ -29,7 +29,7 @@ namespace SilenZ\Segmatch\Internal;
  */
 final class Layout
 {
-    public const int FORMAT_VERSION = 7;
+    public const int FORMAT_VERSION = 9;
 
     public const int NONE = -1;
 }

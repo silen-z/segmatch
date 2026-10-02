@@ -251,7 +251,7 @@ use SilenZ\Segmatch\Http\MethodNotAllowed;
 use SilenZ\Segmatch\Http\NotFound;
 
 $dispatcher = new Dispatcher($router, $container); // $container is a PSR-11 ContainerInterface, optional
-$result = $dispatcher->dispatch($request);
+$result = $dispatcher->match($request);
 
 match (true) {
     $result instanceof Found => $pipeline
@@ -262,14 +262,15 @@ match (true) {
 };
 ```
 
-- **`$request` is a PSR-7 `ServerRequestInterface`.** Both `dispatch()` and `allowedMethods()` take
+- **`$request` is a PSR-7 `ServerRequestInterface`.** Both `match()` and `allowedMethods()` take
   the path from `$request->getUri()->getPath()`.
 - **`$container` resolves a guard class to an instance**, e.g. `$container->get(...)`, the same way
   an application resolves `$result->handler`. Without one, guards are built with a plain
   `new $guard()`.
 - **`Found`** has `handler`, `params`, `middleware`, `name`, `methods` (`null` for `any()` routes)
   and `tags`.
-- **`MethodNotAllowed`** has `allowed`, e.g. `['GET', 'HEAD', 'PUT']`.
+- **`MethodNotAllowed`** has `allowed`, e.g. `['GET', 'PUT', 'HEAD']` — HEAD is included whenever GET
+  is, in no particular position.
 - **HEAD matches GET routes automatically.** A route declared for HEAD itself still wins.
 - **OPTIONS isn't routed automatically.** `$dispatcher->allowedMethods($request)` returns the list
   for building a CORS or OPTIONS response for `$request`'s path, running guards against it with its
@@ -279,7 +280,7 @@ match (true) {
 
 ### Handling: a PSR-15 stack via Relay
 
-`handle()` goes one step further than `dispatch()`: it runs the route's middleware and handler
+`handle()` goes one step further than `match()`: it runs the route's middleware and handler
 itself, as one PSR-15 stack built with [Relay](https://relayphp.com/), and always returns a
 response:
 
@@ -296,13 +297,13 @@ $response = $dispatcher->handle($request); // ResponseInterface, always
   `$container->get(...)`, or a plain `new $entry()` without a container — the same rule as guards)
   to a `Psr\Http\Server\MiddlewareInterface`; the handler must resolve to a
   `Psr\Http\Server\RequestHandlerInterface`. A `[Class::class, 'method']` handler doesn't fit this
-  shape; use `dispatch()` and your own pipeline for those.
+  shape; use `match()` and your own pipeline for those.
 - **Route parameters become request attributes** (`$request->getAttribute('id')`) before the stack
   runs, since PSR-15 handlers take only the request.
 - **`$responseFactory`** (a PSR-17 `ResponseFactoryInterface`, given to the constructor) builds the
   404 and 405 responses; a 405 gets the `Allow` header `allowedMethods()` would compute. Calling
   `handle()` on a dispatcher built without one throws.
-- **Still an addition, not a replacement.** `dispatch()` keeps returning `Found`/`MethodNotAllowed`/
+- **Still an addition, not a replacement.** `match()` keeps returning `Found`/`MethodNotAllowed`/
   `NotFound` unchanged, for applications that want to run their own pipeline instead.
 - **`Dispatcher` implements `Psr\Http\Server\RequestHandlerInterface`.** `handle()`'s signature is
   exactly that interface's, so a `Dispatcher` can be dropped in anywhere a PSR-15 handler is
@@ -335,6 +336,39 @@ $urls->url('users.show', []);                          // throws: missing parame
 
 Compile-time errors include duplicate route names, empty names or tags, invalid prefixes or
 methods, and guard classes that don't implement `Http\Guard`.
+
+### Declared routes, and generating OpenAPI
+
+`Router::definitions()` returns the routes as declared — full paths and metadata, uncompiled, never
+read from or written to the cache. It's for tooling that needs the declarations themselves, not for
+matching requests:
+
+```php
+foreach ($router->definitions() as $definition) {
+    $definition->path;     // "/api/users/{id}"
+    $definition->metadata; // ['handler' => ..., 'name' => 'users.show', 'methods' => ['GET'], ...]
+}
+```
+
+`OpenApi\PathsGenerator` builds the `paths` object of an OpenAPI document from exactly that:
+
+```php
+use SilenZ\Segmatch\OpenApi\PathsGenerator;
+
+$paths = PathsGenerator::generate($router->definitions());
+$document = ['openapi' => '3.1.0', 'info' => [...], ...$paths];
+```
+
+- **It covers only what segmatch knows:** paths, methods, path parameters, names (as
+  `operationId`) and tags. Request/response bodies, security schemes, `info` and `servers` aren't
+  its business — merge them into the document yourself, keyed off `operationId` or route name.
+- **Every operation gets a placeholder `200` response**, since `responses` is a required field of an
+  OpenAPI operation and segmatch has no notion of what a route responds with. Replace it yourself.
+- **Catch-alls become a single `{name}` path parameter.** OpenAPI has no "rest of the path"
+  placeholder, so a `{name*}`/`{name+}`'s actual multi-segment behavior isn't represented.
+- **`any()` routes list every HTTP method OpenAPI supports**, since no methods were declared to
+  narrow it down.
+
 ## Architecture
 
 ```
