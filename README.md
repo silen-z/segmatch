@@ -190,14 +190,14 @@ There's deliberately no built-in parameter validation such as regex constraints:
 values in the controller. If a route really must be skipped for some values, so that another
 route can take the request, write a guard for it.
 
-`Http\Dispatcher` (see [Dispatching](#dispatching)) is how you match: it checks the route's methods
-with `Http\Methods` — generic, container-free — and resolves and runs its guards, the only place
-that knows about the container.
+`Http\HandlerResolver` (see [Handling requests](#handling-requests)) is how you match: it checks
+the route's methods with `Http\Methods` — generic, container-free — and resolves and runs its
+guards, the only place that knows about the container.
 
 - **A rejected route doesn't exist for that request.** Matching continues, so a request falls
   through to another route: `GET /users/new` skips `POST /users/new` and reaches
   `GET /users/{id}`.
-- **`allowedMethods()` counts only routes rejected solely because of their method.** A route
+- **A 405's allowed methods count only routes rejected solely because of their method.** A route
   whose own guard fails, such as a feature switch, doesn't make a 405.
 - **A custom guard implements `Http\Guard`:** one method,
   `accepts(mixed $config, ServerRequestInterface $request, array $params): bool`. The route stores
@@ -205,8 +205,8 @@ that knows about the container.
   instance itself never is. Anything request-specific the guard needs goes into the request's PSR-7
   attributes (`$request->getAttribute(...)`), loaded once before matching.
 - **Guards are resolved per match, not stored statically.** `$container?->get($guardClass) ?? new
-  $guardClass()`, the same way an application resolves `$result->handler` — a guard with
-  constructor dependencies needs a container; a plain one doesn't.
+  $guardClass()`, the same way as middleware and handlers — a guard with constructor dependencies
+  needs a container; a plain one doesn't.
 - **Guards decide whether a route applies, never who is asking.** Authentication and permissions
   belong to middleware, which runs after matching.
 
@@ -226,88 +226,111 @@ Each route's metadata, as returned in `RouteMatch::$route`:
 ]
 ```
 
-Tags let cross-cutting code act on routes without groups. For example, a global auth middleware
-that lets public routes through:
+Tags let cross-cutting code act on routes without splitting them into more groups. For example, one
+auth middleware for the whole site that lets public routes through:
 
 ```php
-$r->get('/login', [AuthController::class, 'form'])->tag('public');
-$r->get('/account', [AccountController::class, 'show']);
+$r->group()->middleware(AuthMiddleware::class)->define(static function (Routes $r): void {
+    $r->get('/login', LoginForm::class)->tag('public');
+    $r->get('/account', ShowAccount::class);
+});
 
-// in the auth middleware, after matching:
-if (!in_array('public', $match->route['tags'] ?? [], true) && !$session->isLoggedIn()) {
+// in AuthMiddleware::process(), which Http\HandlerResolver runs inside each route's stack:
+$found = $request->getAttribute(Found::class);
+if (!in_array('public', $found->tags, true) && !$session->isLoggedIn()) {
     return new Response(401);
 }
 ```
 
-### Dispatching
+`Found` is only on the request inside the route's stack (see
+[Handling requests](#handling-requests)), so this works as route or group middleware, not as
+middleware that runs before `HandlerResolver`.
 
-`Http\Dispatcher` wraps the router and answers with one of three results, so you don't handle
-`RouteMatch`, `NoMatch`, methods and guards yourself:
+### Handling requests
+
+`Http\HandlerResolver` wraps the router. `resolve()` returns the PSR-15 handler that answers a
+request — the matched route's middleware and handler as one stack built with
+[Relay](https://relayphp.com/), or a 404/405 handler — so you don't handle `RouteMatch`,
+`NoMatch`, methods and guards yourself:
 
 ```php
-use SilenZ\Segmatch\Http\Dispatcher;
-use SilenZ\Segmatch\Http\Found;
-use SilenZ\Segmatch\Http\MethodNotAllowed;
-use SilenZ\Segmatch\Http\NotFound;
+use SilenZ\Segmatch\Http\HandlerResolver;
 
-$dispatcher = new Dispatcher($router, $container); // $container is a PSR-11 ContainerInterface, optional
-$result = $dispatcher->match($request);
-
-match (true) {
-    $result instanceof Found => $pipeline
-        ->through($result->middleware)                      // ['api', 'auth']
-        ->then(fn () => $container->call($result->handler, $result->params)),
-    $result instanceof MethodNotAllowed => new Response(405, ['Allow' => implode(', ', $result->allowed)]),
-    $result instanceof NotFound => new Response(404),
-};
+// $responseFactory builds the default 404/405 responses; $container resolves guards, middleware and handlers
+$resolver = new HandlerResolver($router, $responseFactory, $container);
+$response = $resolver->resolve($request)->handle($request);
 ```
 
-- **`$request` is a PSR-7 `ServerRequestInterface`.** Both `match()` and `allowedMethods()` take
-  the path from `$request->getUri()->getPath()`.
-- **`$container` resolves a guard class to an instance**, e.g. `$container->get(...)`, the same way
-  an application resolves `$result->handler`. Without one, guards are built with a plain
-  `new $guard()`.
-- **`Found`** has `handler`, `params`, `middleware`, `name`, `methods` (`null` for `any()` routes)
-  and `tags`.
-- **`MethodNotAllowed`** has `allowed`, e.g. `['GET', 'PUT', 'HEAD']` — HEAD is included whenever GET
-  is, in no particular position.
+- **`$request` is a PSR-7 `ServerRequestInterface`.** The path comes from
+  `$request->getUri()->getPath()`.
+- **`$responseFactory` is a PSR-17 `ResponseFactoryInterface`, required.** The default 404, 405 and
+  OPTIONS handlers build their responses with it.
+- **`$container` is a PSR-11 `ContainerInterface`, optional.** Guards, middleware and the handler
+  are resolved with `$container->get(...)`, or a plain `new $entry()` without a container. Each
+  middleware entry must resolve to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
+  `Psr\Http\Server\RequestHandlerInterface`.
+- **The match is a request attribute.** PSR-15 handlers take only the request, so
+  `$request->getAttribute(Found::class)` gives the route's own middleware and handler an
+  `Http\Found`: its `params` (URL-decoded, by name), `name` and `tags`. Parameters are deliberately
+  not separate attributes, so they can't collide with the application's own:
+
+  ```php
+  $id = $request->getAttribute(Found::class)->params['id'];
+  ```
+
+  Middleware can use it too, for example to skip authentication on routes tagged `public`, without
+  matching again.
+- **Requests no route takes get one of three answers:**
+
+  | Case | Answer | To change it |
+  | --- | --- | --- |
+  | No route for the path | `Http\NotFoundHandler`: 404 | the constructor's `$notFoundHandler` |
+  | Routes for the path, not the method | `Http\AllowedMethodsHandler`: 405 + `Allow` | middleware (below) |
+  | The same, for an OPTIONS request | `Http\AllowedMethodsHandler`: 200 + `Allow` | middleware (below) |
+
+  ```php
+  $resolver = new HandlerResolver($router, $responseFactory, $container, notFoundHandler: new MyNotFoundPage($twig));
+  ```
+
+  For the latter two, middleware sees `$request->getAttribute(MethodNotAllowed::class)`, whose
+  `allowed` lists the path's methods, e.g. `['GET', 'PUT', 'HEAD']` — HEAD is included whenever GET
+  is.
 - **HEAD matches GET routes automatically.** A route declared for HEAD itself still wins.
-- **OPTIONS isn't routed automatically.** `$dispatcher->allowedMethods($request)` returns the list
-  for building a CORS or OPTIONS response for `$request`'s path, running guards against it with its
-  method replaced by OPTIONS. `any()` routes aren't listed.
+- **A HEAD response never has a body,** whoever answers — a GET route, a HEAD or `any()` route, or
+  the not-found and method-not-allowed handlers: it's dropped, keeping status and headers, as
+  RFC 9110 requires. The request is never rewritten: guards, middleware and the handler all see
+  HEAD, so a handler can skip building a body it won't send. A handler for several methods should
+  therefore branch on the method that changes things — `if ($method === 'POST')`, not
+  `if ($method === 'GET') ... else` — or a HEAD request takes the POST path.
+- **OPTIONS is answered automatically.** A route declared for OPTIONS, or with `any()`, takes the
+  request; otherwise the OPTIONS handler does, where other methods would get a 405. Guards run
+  against the OPTIONS request itself.
 - **Request attributes for custom guards:** PSR-7's own `$request->withAttribute($name, $value)`,
   read back by the guard with `$request->getAttribute($name)`.
+- **Middleware for every request** is added to the resolver, not to the routes:
 
-### Handling: a PSR-15 stack via Relay
+  ```php
+  $resolver->addMiddleware(RequestLog::class, new Cors($config)); // identifiers or instances
+  ```
 
-`handle()` goes one step further than `match()`: it runs the route's middleware and handler
-itself, as one PSR-15 stack built with [Relay](https://relayphp.com/), and always returns a
-response:
+  It wraps whatever answers — a route, or the not-found, method-not-allowed or OPTIONS handler —
+  outside the route's own middleware, the first added outermost. It runs after matching, so it sees
+  `Found::class` or `MethodNotAllowed::class` (neither for a 404). Group middleware, by contrast,
+  only runs for the routes in the group.
 
-```php
-use Psr\Http\Message\ResponseFactoryInterface;
-use SilenZ\Segmatch\Http\Dispatcher;
+  It's also where the OPTIONS answer is changed, e.g. for CORS, which needs middleware anyway to
+  add `Access-Control-Allow-Origin` to actual responses. On a preflight that no route takes, the
+  middleware sees the allowed methods, guards already applied, and decorates the default 200:
 
-// $container resolves guards, middleware and handlers; $responseFactory builds 404/405 responses
-$dispatcher = new Dispatcher($router, $container, $responseFactory);
-$response = $dispatcher->handle($request); // ResponseInterface, always
-```
-
-- **Middleware and the handler aren't opaque here.** Each middleware entry must resolve (via
-  `$container->get(...)`, or a plain `new $entry()` without a container — the same rule as guards)
-  to a `Psr\Http\Server\MiddlewareInterface`; the handler must resolve to a
-  `Psr\Http\Server\RequestHandlerInterface`. A `[Class::class, 'method']` handler doesn't fit this
-  shape; use `match()` and your own pipeline for those.
-- **Route parameters become request attributes** (`$request->getAttribute('id')`) before the stack
-  runs, since PSR-15 handlers take only the request.
-- **`$responseFactory`** (a PSR-17 `ResponseFactoryInterface`, given to the constructor) builds the
-  404 and 405 responses; a 405 gets the `Allow` header `allowedMethods()` would compute. Calling
-  `handle()` on a dispatcher built without one throws.
-- **Still an addition, not a replacement.** `match()` keeps returning `Found`/`MethodNotAllowed`/
-  `NotFound` unchanged, for applications that want to run their own pipeline instead.
-- **`Dispatcher` implements `Psr\Http\Server\RequestHandlerInterface`.** `handle()`'s signature is
-  exactly that interface's, so a `Dispatcher` can be dropped in anywhere a PSR-15 handler is
-  expected: the terminal entry of an application-wide Relay queue, a framework's fallback handler.
+  ```php
+  $allowed = $request->getAttribute(MethodNotAllowed::class);
+  if ($request->getMethod() === 'OPTIONS' && $allowed instanceof MethodNotAllowed) {
+      $response = $response->withHeader('Access-Control-Allow-Methods', implode(', ', $allowed->allowed));
+  }
+  ```
+- **Middleware that must run before matching** — anything that changes the request or sets the
+  attributes guards read — goes in a stack around the resolver; its last entry is a one-liner,
+  `return $resolver->resolve($request)->handle($request);`.
 
 ### URL generation
 
