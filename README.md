@@ -202,7 +202,7 @@ $router = new Router(
 ### Guards: methods and your own conditions
 
 A route's HTTP methods are stored with it directly, not as a guard (`any()` routes get none).
-`->guard(MyGuard::class, $config)` adds a condition of your own on top.
+`->guard(MyGuard::class)` adds a condition of your own on top.
 
 There's deliberately no built-in parameter validation such as regex constraints: check parameter
 values in the controller. If a route really must be skipped for some values, so that another
@@ -218,15 +218,18 @@ its guards, the only place that knows about the container.
 - **A 405's allowed methods count only routes rejected solely because of their method.** A route
   whose own guard fails, such as a feature switch, doesn't make a 405.
 - **A custom guard implements `Http\Guard`:** one method,
-  `accepts(mixed $config, ServerRequestInterface $request, array $params): bool`. Anything
-  request-specific the guard needs goes into the request's PSR-7 attributes
-  (`$request->getAttribute(...)`), loaded once before matching.
+  `accepts(ServerRequestInterface $request, array $params): bool`. There's no separate configuration
+  parameter — a guard that needs configuration takes it as a constructor argument instead, e.g.
+  `new FeatureGuard('beta')`. Anything request-specific the guard needs goes into the request's
+  PSR-7 attributes (`$request->getAttribute(...)`), loaded once before matching.
 - **Guards are resolved per match, not stored statically.** `$container?->get($guardClass) ?? new
   $guardClass()`, the same way as middleware and handlers — a guard with constructor dependencies
-  needs a container; a plain one doesn't. `->guard(new MyGuard($dependency))` skips the container by
-  giving a ready instance instead of a class name — baking configuration into its constructor instead
-  of passing `$config` (which stays most useful for one guard class shared across routes that each
-  need it configured differently, like a feature name).
+  needs a container; a plain one doesn't. `->guard(new MyGuard($dependency))` skips the container
+  entirely by giving a ready instance instead of a class name. A class name is therefore only right
+  for a guard that behaves the same everywhere, or varies by request rather than by route; one guard
+  class that needs different configuration per route, like a feature name, needs a separate instance
+  per route (`new FeatureGuard('beta')`, `new FeatureGuard('bulk-edit')`) — a container resolving a
+  shared class name has no way to tell routes apart.
 - **Guards decide whether a route applies, never who is asking.** Authentication and permissions
   belong to middleware, which runs after matching.
 
