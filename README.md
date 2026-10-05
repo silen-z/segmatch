@@ -204,11 +204,11 @@ $router = new Router(
   $resolver = new HandlerResolver($router, $responseFactory, $container, routes: $routes);
   ```
 
-  `->resolve()` builds both together from one `Routes`, for the common case of one tree answering its
+  `->handler()` builds both together from one `Routes`, for the common case of one tree answering its
   own requests, so this can't be gotten wrong:
 
   ```php
-  $response = $routes->resolve($request, $responseFactory, $container)->handle($request);
+  $response = $routes->handler($request, $responseFactory, $container)->handle($request);
   ```
 
   Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
@@ -310,7 +310,7 @@ Or, for the common case of one `Http\Routes` tree answering its own requests, sk
 and `$resolver` separately:
 
 ```php
-$response = $routes->resolve($request, $responseFactory, $container)->handle($request);
+$response = $routes->handler($request, $responseFactory, $container)->handle($request);
 ```
 
 - **`$request` is a PSR-7 `ServerRequestInterface`.** The path comes from
