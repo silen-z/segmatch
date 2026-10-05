@@ -8,11 +8,11 @@ use FastRoute\Dispatcher;
 use FastRoute\RouteCollector as FastRouteCollector;
 use LogicException;
 use SilenZ\Segmatch\Cache\FileCache;
-use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteTable;
 
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
@@ -49,7 +49,7 @@ final class Routers
      */
     public static function flat(array $routes): Matcher
     {
-        return new Matcher(Compiler::compile(self::flatRoutes($routes)));
+        return new Matcher(Compiler::compile(new RouteTable(self::flatRoutes($routes))));
     }
 
     public const string CACHE_DIRECTORY = __DIR__ . '/../var/bench-cache';
@@ -65,7 +65,10 @@ final class Routers
         $routes = Fixtures::get($fixture)['routes'];
         $fastRouteFile = self::CACHE_DIRECTORY . '/' . $fixture . '.fast-route.php';
 
-        new FileCache(self::CACHE_DIRECTORY)->set($fixture, Compiler::compile(self::flatRoutes($routes)));
+        new FileCache(self::CACHE_DIRECTORY)->set(
+            $fixture,
+            Compiler::compile(new RouteTable(self::flatRoutes($routes))),
+        );
 
         // FastRoute only writes its cache when the file does not exist yet.
         if (is_file($fastRouteFile)) {
@@ -83,7 +86,7 @@ final class Routers
     public static function cachedFlat(string $fixture): Router
     {
         return new Router(
-            new CallableRouteTable(static fn(): iterable => throw new LogicException('Cache entry missing.'), $fixture),
+            new RouteTable(static fn(): iterable => throw new LogicException('Cache entry missing.'), $fixture),
             new FileCache(self::CACHE_DIRECTORY),
         );
     }

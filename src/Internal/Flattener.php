@@ -26,7 +26,7 @@ final class Flattener
 {
     /**
      * @param list<RouteDefinition> $routes
-     * @param mixed $tableMetadata see {@see Compiler::compile()}
+     * @param mixed $tableMetadata the table's own metadata, {@see \SilenZ\Segmatch\RouteTable::metadata()}
      *
      * @return CompiledRoutes
      */

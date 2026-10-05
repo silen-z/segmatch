@@ -7,11 +7,11 @@ namespace SilenZ\Segmatch\Tests;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Cache\FileCache;
-use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteTable;
 use SilenZ\Segmatch\Tests\Fixtures\Method;
 
 use function basename;
@@ -60,7 +60,10 @@ final class FileCacheTest extends TestCase
         ]);
         $routes[] = new RouteDefinition('/api/123', 'numeric segment');
         $routes[] = new RouteDefinition('/assets/{path*}', 'assets');
-        $compiled = Compiler::compile($routes, ['middleware' => ['cors', Method::Get], 'weight' => 0.5]);
+        $compiled = Compiler::compile(new RouteTable($routes, metadata: [
+            'middleware' => ['cors', Method::Get],
+            'weight' => 0.5,
+        ]));
 
         $cache = new FileCache($this->directory);
         $cache->set('routes', $compiled);
@@ -76,7 +79,7 @@ final class FileCacheTest extends TestCase
     public function testFileThatDoesNotReturnAnArrayIsIgnored(): void
     {
         $cache = new FileCache($this->directory);
-        $cache->set('routes', Compiler::compile([]));
+        $cache->set('routes', Compiler::compile(new RouteTable([])));
         file_put_contents($cache->file('routes'), data: '<?php return 42;');
 
         static::assertNull($cache->get('routes'));
@@ -107,13 +110,10 @@ final class FileCacheTest extends TestCase
     public function testRouterUsesTheFileCache(): void
     {
         $cache = new FileCache($this->directory);
-        new Router(new CallableRouteTable(static fn(): array => [new RouteDefinition(
-            '/a',
-            'a',
-        )], 'app'), $cache)->match('/a');
+        new Router(new RouteTable(static fn(): array => [new RouteDefinition('/a', 'a')], 'app'), $cache)->match('/a');
 
         $router = new Router(
-            new CallableRouteTable(static fn() => throw new LogicException('should not compile'), 'app'),
+            new RouteTable(static fn() => throw new LogicException('should not compile'), 'app'),
             $cache,
         );
 

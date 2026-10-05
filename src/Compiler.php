@@ -39,19 +39,21 @@ use function sprintf;
 final class Compiler
 {
     /**
-     * @param iterable<mixed, mixed> $definitions {@see RouteDefinition}s in declaration order, which
-     *     decides between routes sharing a path; anything else is rejected
-     * @param mixed $tableMetadata metadata of the route table as a whole rather than of any one route
-     *     ({@see RouteTable::metadata()}), kept as-is for {@see Matcher::tableMetadata()}; plain data,
-     *     like a route's own
+     * Compiles the table's definitions in declaration order, which decides between routes sharing a
+     * path, and its metadata, kept as-is for {@see Matcher::tableMetadata()}. Anything but a
+     * {@see RouteDefinition} among the definitions is rejected, and both must be plain data. The
+     * table's cache key plays no part.
      *
      * @return CompiledRoutes
      *
      * @throws InvalidRouteException
      */
-    public static function compile(iterable $definitions, mixed $tableMetadata = null): array
+    public static function compile(RouteTable $table): array
     {
         $routes = [];
+        // Checked anyway: the definitions' type is only documented, and a closure may return anything.
+        /** @var iterable<mixed> $definitions */
+        $definitions = $table->definitions();
         // @mago-expect analysis:mixed-assignment
         foreach ($definitions as $route) {
             if (!$route instanceof RouteDefinition) {
@@ -66,6 +68,8 @@ final class Compiler
             $routes[] = $route;
         }
 
+        // @mago-expect analysis:mixed-assignment
+        $tableMetadata = $table->metadata();
         self::assertExportable($tableMetadata, 'the route table');
 
         return Flattener::flatten(TreeBuilder::build($routes), $routes, $tableMetadata);

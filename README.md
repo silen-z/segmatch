@@ -14,12 +14,12 @@ come from `Http\Routes`, a declaration layer built on top of it (see [HTTP route
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
-use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteTable;
 
-$routes = new CallableRouteTable(
+$routes = new RouteTable(
     static fn(): array => [
         new RouteDefinition('/', ['handler' => 'home']),
         new RouteDefinition('/api/users/{id}', ['handler' => 'users.show', 'middleware' => ['auth']]),
@@ -36,18 +36,20 @@ if ($result instanceof RouteMatch) {
 }
 ```
 
-- **Routes come from a `RouteTable`:** a cache key, and the route definitions behind it, as one
-  unit — a cache key that doesn't change with what `definitions()` produces risks silently serving
-  stale routes, so the two live together instead of being passed to `Router` as separate arguments.
-  `CallableRouteTable` wraps a plain callable for quick setups and tests; `definitions()` returns an
-  iterable of `RouteDefinition`s — an array, a generator (`yield`, `yield from` to combine sources),
-  or an invokable object. A `RouteDefinition` parses its path when it's created, so a malformed path
-  throws where it's declared. `Http\Routes` gives you one too (`$routes->table(...)`, see
-  [HTTP routes](#http-routes)), or extend `RouteTable` directly for anything more involved.
+- **Routes come from a `RouteTable`:** a cache key, the route definitions behind it and optional
+  metadata of the table's own, as one unit — a cache key that doesn't change with what the
+  definitions produce risks silently serving stale routes, so they live together instead of being
+  passed to `Router` as separate arguments. The definitions are a callable — a closure, an
+  invokable object, a function or method name — called only when the routes need compiling, or a
+  plain array of `RouteDefinition`s used as given. A generator (`yield`, `yield from` to combine
+  sources) goes in as the callable producing it, since it can only be iterated once. A
+  `RouteDefinition` parses its path when it's created, so a malformed path throws where it's
+  declared. `Http\Routes` gives you one too (`$routes->table(...)`, see [HTTP routes](#http-routes)).
 - `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
   Parameter values are `rawurldecode`d.
-- `Router` is a thin entry point over the lower-level pieces. `new Matcher(Compiler::compile($routes))`
-  gives a matcher without any caching, and `$router->matcher()` returns the router's own one.
+- `Router` is a thin entry point over the lower-level pieces.
+  `new Matcher(Compiler::compile(new RouteTable($routes)))` gives a matcher without any caching, and
+  `$router->matcher()` returns the router's own one.
 
 Metadata is written into the cache, so it may only contain scalars, `null`, enums and arrays of
 those. Anything else is rejected at compile time.
@@ -56,27 +58,27 @@ those. Anything else is rejected at compile time.
 
 Caching works like FastRoute's cached dispatcher:
 
-- **`definitions()` runs only on a cache miss.** It runs the first time the router is used and the
-  cache has no entry for `cacheKey()`. On a warm request the routes are not declared at all; the
-  compiled table comes straight from the cache. `cacheKey()` itself is called every time, so it must
-  stay cheap — never do the work `definitions()` does to compute it.
+- **The definitions callable runs only on a cache miss.** It runs the first time the router is used
+  and the cache has no entry for the table's key. On a warm request the routes are not declared at
+  all; the compiled table comes straight from the cache. The key is read every time, which is why
+  it's a plain string rather than something computed.
 - **Nothing is invalidated automatically.** Anything that changes which routes get compiled must
-  change what `cacheKey()` returns: a deploy, or configuration that decides which routes exist. Put
-  an application version or a hash of that configuration into it. Different keys are separate cache
+  change the cache key: a deploy, or configuration that decides which routes exist. Put an
+  application version or a hash of that configuration into it. Different keys are separate cache
   entries.
 - **A `null` key, or no `$cache` at all, disables caching.** Routes are then compiled whenever a
-  `Router` is first used, which is what you want in development — `CallableRouteTable`'s key
-  defaults to `null` for exactly this reason.
+  `Router` is first used, which is what you want in development — `RouteTable`'s key defaults to
+  `null` for exactly this reason.
 - **Any storage works.** `Cache\RouteCache` is a two-method interface (`get(key)`, `set(key,
   compiled)`). `Cache\FileCache` stores each key as a PHP file in a directory, written atomically
   and loaded with `require`, so OPcache serves it from memory. A key made of letters, digits,
   `.`, `_` and `-` is the file name (`routes-v2` => `routes-v2.php`); other keys are made safe and
   get a short hash (`tenant/a` => `tenant_a~1f3c8a2b.php`). Entries written by an incompatible
   router version are ignored and recompiled.
-- **A table can cache metadata of its own.** Override `RouteTable::metadata()` to return plain data
-  that belongs to the routes as a whole rather than to any one route. It's compiled and cached with
-  them, so like `definitions()` it only runs on a miss; `$router->tableMetadata()` reads it back
-  either way. Matching never returns it.
+- **A table can cache metadata of its own.** `new RouteTable($definitions, $key, metadata: ...)`
+  takes plain data that belongs to the routes as a whole rather than to any one route, or a closure
+  producing it, which like the definitions' only runs on a miss. It's compiled and cached with the
+  routes; `$router->tableMetadata()` reads it back either way. Matching never returns it.
 
 ### Several routes per path and filters
 
@@ -196,8 +198,8 @@ $router = new Router(
   tags are inherited, outermost first, without duplicates. The router never interprets tags.
 - **Definitions as a class:** nothing stops you from grouping declarations into an invokable class
   and calling it yourself, e.g. `(new AppRoutes())($routes)`. You aren't limited to `Http\Routes`
-  either — `CallableRouteTable` wraps any callable returning `RouteDefinition`s directly, or extend
-  `RouteTable` yourself for anything more involved (see [Caching](#caching)).
+  either — `new RouteTable($callable, $key)` takes any callable returning `RouteDefinition`s directly
+  (see [Caching](#caching)).
 - **A handler, middleware entry or filter may be a real instance or closure,** not just a class name:
   anything that isn't already cacheable plain data (scalars, null, enums, arrays of those) is
   transparently wrapped into the tree's `Http\Registry` instead, so routes can still be cached without

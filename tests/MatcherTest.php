@@ -11,6 +11,7 @@ use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\RouteTable;
 
 use function sprintf;
 
@@ -21,7 +22,7 @@ final class MatcherTest extends TestCase
      */
     private static function matcher(Closure $define): Matcher
     {
-        return new Matcher(Compiler::compile($define()));
+        return new Matcher(Compiler::compile(new RouteTable($define())));
     }
 
     /**

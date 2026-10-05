@@ -7,7 +7,6 @@ namespace SilenZ\Segmatch\Tests;
 use ArrayObject;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Cache\RouteCache;
-use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\NoMatch;
 use SilenZ\Segmatch\RouteDefinition;
@@ -43,7 +42,7 @@ final class RouterTest extends TestCase
      */
     private static function table(callable $definitions, ?string $cacheKey = null): RouteTable
     {
-        return new CallableRouteTable($definitions, $cacheKey);
+        return new RouteTable($definitions, $cacheKey);
     }
 
     private static function route(RouteMatch|NoMatch $result): mixed
@@ -173,7 +172,7 @@ final class RouterTest extends TestCase
     public function testEntryFromAnIncompatibleVersionIsRecompiled(): void
     {
         $cache = self::memoryCache();
-        $cache->set('routes', ['version' => 0] + Compiler::compile([]));
+        $cache->set('routes', ['version' => 0] + Compiler::compile(new RouteTable([])));
 
         $router = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'a')], 'routes'), $cache);
 
@@ -274,34 +273,19 @@ final class RouterTest extends TestCase
     {
         $cache = self::memoryCache();
         $calls = new ArrayObject();
-        $table = static fn(string $middleware): RouteTable => new class($calls, $middleware) extends RouteTable {
-            /**
-             * @param ArrayObject<int, string> $calls
-             */
-            public function __construct(
-                private readonly ArrayObject $calls,
-                private readonly string $middleware,
-            ) {}
-
-            public function cacheKey(): string
-            {
-                return 'routes';
-            }
-
-            public function definitions(): array
-            {
-                $this->calls->append('definitions');
+        $table = static fn(string $middleware): RouteTable => new RouteTable(
+            static function () use ($calls): array {
+                $calls->append('definitions');
 
                 return [new RouteDefinition('/a', 'a')];
-            }
+            },
+            'routes',
+            static function () use ($calls, $middleware): array {
+                $calls->append('metadata');
 
-            public function metadata(): array
-            {
-                $this->calls->append('metadata');
-
-                return ['middleware' => [$this->middleware]];
-            }
-        };
+                return ['middleware' => [$middleware]];
+            },
+        );
 
         static::assertSame(['middleware' => ['first']], new Router($table('first'), $cache)->tableMetadata());
         // Answered from the cache: neither the routes nor the table metadata are produced again.
@@ -309,24 +293,23 @@ final class RouterTest extends TestCase
         static::assertSame(['definitions', 'metadata'], $calls->getArrayCopy());
     }
 
+    public function testTableMetadataMayBeGivenAsAPlainValue(): void
+    {
+        $router = new Router(new RouteTable([], metadata: ['middleware' => ['cors']]));
+
+        static::assertSame(['middleware' => ['cors']], $router->tableMetadata());
+    }
+
+    public function testDefinitionsMayBeGivenAsAPlainArray(): void
+    {
+        $router = new Router(new RouteTable([new RouteDefinition('/a', 'a')]));
+
+        static::assertSame('a', self::route($router->match('/a')));
+    }
+
     public function testTableMetadataIsNeverMatched(): void
     {
-        $router = new Router(new class extends RouteTable {
-            public function cacheKey(): null
-            {
-                return null;
-            }
-
-            public function definitions(): array
-            {
-                return [];
-            }
-
-            public function metadata(): string
-            {
-                return 'table';
-            }
-        });
+        $router = new Router(new RouteTable([], metadata: 'table'));
 
         static::assertInstanceOf(NoMatch::class, $router->match('/'));
         static::assertSame([], $router->matcher()->metadata());

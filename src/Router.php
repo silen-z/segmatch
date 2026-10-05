@@ -82,7 +82,7 @@ final class Router
     {
         $key = $this->routes->cacheKey();
         if ($this->cache === null || $key === null) {
-            return Compiler::compile($this->routes->definitions(), $this->routes->metadata());
+            return Compiler::compile($this->routes);
         }
 
         $cached = $this->cache->get($key);
@@ -91,7 +91,7 @@ final class Router
             return $cached;
         }
 
-        $compiled = Compiler::compile($this->routes->definitions(), $this->routes->metadata());
+        $compiled = Compiler::compile($this->routes);
         $this->cache->set($key, $compiled);
 
         return $compiled;

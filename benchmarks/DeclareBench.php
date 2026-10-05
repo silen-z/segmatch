@@ -40,7 +40,7 @@ final class DeclareBench
      */
     public function benchCompiled(array $params): void
     {
-        Compiler::compile(self::declare($params['fixture'])->definitions());
+        Compiler::compile(self::declare($params['fixture'])->table());
     }
 
     /**
@@ -54,8 +54,9 @@ final class DeclareBench
     private static function declare(string $fixture): Routes
     {
         $routes = new Routes(new Registry());
-        foreach (Fixtures::get($fixture)['routes'] as $index => $route) {
-            $routes->get($route, $index);
+        foreach (Fixtures::get($fixture)['routes'] as $route) {
+            // The path doubles as the handler: an integer would be rejected, as it reads as a Registry id.
+            $routes->get($route, $route);
         }
 
         return $routes;

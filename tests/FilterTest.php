@@ -11,6 +11,7 @@ use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\NoMatch;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\RouteTable;
 
 use function array_key_exists;
 use function array_map;
@@ -29,7 +30,7 @@ final class FilterTest extends TestCase
             $set[] = new RouteDefinition($path, $metadata);
         }
 
-        return new Matcher(Compiler::compile($set));
+        return new Matcher(Compiler::compile(new RouteTable($set)));
     }
 
     /**

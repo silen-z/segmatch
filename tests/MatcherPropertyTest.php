@@ -12,6 +12,7 @@ use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\NoMatch;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
+use SilenZ\Segmatch\RouteTable;
 use SilenZ\Segmatch\Tests\Support\RouteOracle;
 
 use function array_map;
@@ -54,7 +55,7 @@ final class MatcherPropertyTest extends TestCase
                 $set[] = new RouteDefinition($path, $index);
             }
 
-            $matcher = new Matcher(Compiler::compile($set));
+            $matcher = new Matcher(Compiler::compile(new RouteTable($set)));
         } catch (InvalidRouteException) {
             // Random sets may mix {r*} and {r+} on one node, which is rejected by design.
             $this->addToAssertionCount(1);
