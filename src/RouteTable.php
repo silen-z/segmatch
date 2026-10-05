@@ -6,7 +6,8 @@ namespace SilenZ\Segmatch;
 
 /**
  * Where {@see Router} gets its routes from: a cache key and the route definitions behind it, as one
- * unit.
+ * unit. Extend it (or use {@see CallableRouteTable}, which is exactly a callable and a key) for
+ * anything more involved than a plain list.
  *
  * Like FastRoute's cached dispatcher, {@see definitions()} only runs when the cache has no entry for
  * {@see cacheKey()}. The two live on one object, instead of being passed to `Router` as two separate
