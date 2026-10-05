@@ -190,7 +190,8 @@ $router = new Router(
 - **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
   `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
 - **Middleware on the root tree wraps every outcome,** not just its own routes — see
-  [Handling requests](#handling-requests).
+  [Handling requests](#handling-requests). It's baked into no route's metadata; `table()` keeps it as
+  the table's own metadata instead (`['middleware' => [...]]`), cached with the routes.
 - **Tags:** `->tag('public', ...)` on a route or a group labels routes for your own code. Group
   tags are inherited, outermost first, without duplicates. The router never interprets tags.
 - **Definitions as a class:** nothing stops you from grouping declarations into an invokable class
