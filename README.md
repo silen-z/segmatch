@@ -270,7 +270,9 @@ Each route's metadata, as returned in `RouteMatch::$route`:
 ```
 
 `handler`, each `middleware` entry and each `filters` entry is a class name, container identifier, or
-`Http\Registry` id standing in for a real instance or closure given instead.
+`Http\Registry` id standing in for a real instance or closure given instead. Those ids are integers,
+so a handler, middleware entry or filter can never be an integer of its own: declaring one throws an
+`InvalidRouteException`.
 
 Tags let cross-cutting code act on routes without splitting them into more groups. For example, one
 auth middleware for the whole site that lets public routes through:
