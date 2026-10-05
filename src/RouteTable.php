@@ -31,7 +31,7 @@ interface RouteTable
      * The routes themselves (an array or a generator). Only called when the cache has no entry for
      * {@see cacheKey()}, so, unlike it, this may be as expensive as declaring the routes needs to be.
      *
-     * @return iterable<mixed, RouteDefinition>
+     * @return iterable<int, RouteDefinition>
      */
     public function definitions(): iterable;
 }

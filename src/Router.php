@@ -52,7 +52,7 @@ final class Router
      * tooling that needs the declarations themselves, e.g. an index of routes by name, or generating
      * documentation, not for matching requests.
      *
-     * @return iterable<mixed, RouteDefinition>
+     * @return iterable<int, RouteDefinition>
      */
     public function definitions(): iterable
     {

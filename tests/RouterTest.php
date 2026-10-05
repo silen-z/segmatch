@@ -39,7 +39,7 @@ final class RouterTest extends TestCase
     }
 
     /**
-     * @param callable(): iterable<RouteDefinition> $definitions
+     * @param callable(): iterable<int, RouteDefinition> $definitions
      */
     private static function table(callable $definitions, ?string $cacheKey = null): RouteTable
     {
@@ -64,13 +64,13 @@ final class RouterTest extends TestCase
     public function testRoutesMayComeFromAGenerator(): void
     {
         $users =
-            /** @return iterable<RouteDefinition> */
+            /** @return iterable<int, RouteDefinition> */
             static function (): iterable {
                 yield new RouteDefinition('/users', 'users');
                 yield new RouteDefinition('/users/{id}', 'user');
             };
         $router = new Router(self::table(
-            /** @return iterable<RouteDefinition> */
+            /** @return iterable<int, RouteDefinition> */
             static function () use ($users): iterable {
                 yield new RouteDefinition('/', 'home');
                 yield from $users();
@@ -242,8 +242,8 @@ final class RouterTest extends TestCase
             return [new RouteDefinition('/a', 'a')];
         }));
 
-        [...$router->definitions()];
-        [...$router->definitions()];
+        $router->definitions();
+        $router->definitions();
 
         static::assertCount(2, $calls);
     }
@@ -259,7 +259,8 @@ final class RouterTest extends TestCase
             'second',
         )], 'routes'), $cache);
 
+
         static::assertSame('first', self::route($laterRouter->match('/a')));
-        static::assertSame('second', [...$laterRouter->definitions()][0]->metadata);
+        static::assertSame('second', iterator_to_array($laterRouter->definitions())[0]->metadata);
     }
 }

@@ -13,11 +13,11 @@ use Closure;
  */
 final class CallableRouteTable implements RouteTable
 {
-    /** @var Closure(): iterable<mixed, RouteDefinition> */
+    /** @var Closure(): iterable<int, RouteDefinition> */
     private readonly Closure $definitions;
 
     /**
-     * @param callable(): iterable<mixed, RouteDefinition> $definitions
+     * @param callable(): iterable<int, RouteDefinition> $definitions
      */
     public function __construct(
         callable $definitions,

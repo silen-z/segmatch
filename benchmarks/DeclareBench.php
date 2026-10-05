@@ -39,7 +39,7 @@ final class DeclareBench
      */
     public function benchCompiled(array $params): void
     {
-        Compiler::compile(self::declare($params['fixture'])->compiled()());
+        Compiler::compile(self::declare($params['fixture'])->definitions());
     }
 
     /**

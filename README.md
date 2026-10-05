@@ -179,6 +179,8 @@ $router = new Router(
   groups it's declared in.
 - **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
   `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
+- **Middleware on the tree passed to the resolver wraps every outcome,** not just its own routes —
+  see [Handling requests](#handling-requests).
 - **Tags:** `->tag('public', ...)` on a route or a group labels routes for your own code. Group
   tags are inherited, outermost first, without duplicates. The router never interprets tags.
 - **Definitions as a class:** nothing stops you from grouping declarations into an invokable class
@@ -361,27 +363,30 @@ $response = $routes->handler($request, $responseFactory, $container)->handle($re
 - **Request attributes for custom filters:** PSR-7's own `$request->withAttribute($name, $value)`,
   read back by the filter with `$request->getAttribute($name)`.
 - **All middleware is declared on the routes, not on the resolver.** Group middleware
-  (`$r->group('/api')->middleware(...)`) only runs for the routes in that group; there's no
-  app-wide equivalent that also wraps the not-found, method-not-allowed or OPTIONS answers — those
-  three are always exactly what `Http\NotFoundHandler` and `Http\AllowedMethodsHandler` build.
-  Something that must run for every request regardless of whether a route matches, e.g. CORS on a
-  404, wraps `$resolver->resolve($request)->handle($request)` from outside instead (next bullet) —
-  reading the allowed methods back off the **response**'s `Allow` header (built in exactly the
-  format `Access-Control-Allow-Methods` wants), since the `MethodNotAllowed` request attribute only
-  exists inside the resolver's own stack, invisible from outside it:
+  (`$r->group('/api')->middleware(...)`) only runs for the routes in that group — there's no "wrong
+  method" or "no route" response to decorate for a path the group doesn't own. Middleware on the
+  `Http\Routes` given to the resolver (`routes:` above, usually the same tree `handler()` is called
+  on) is different: it also wraps the not-found, method-not-allowed and OPTIONS answers, so it's the
+  way to run something for every outcome, matched route or not — e.g. CORS, which must still
+  decorate a 404 or a preflight to a path with no route:
+
+  ```php
+  $routes->middleware(new Cors(['https://app.example']));
+  ```
 
   ```php
   final class Cors implements MiddlewareInterface
   {
       public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
       {
-          $response = $handler->handle($request); // $handler ends in $resolver->resolve($request)->handle($request)
+          $response = $handler->handle($request);
           if (!$request->hasHeader('Origin')) {
               return $response;
           }
 
           $response = $response->withHeader('Access-Control-Allow-Origin', $request->getHeaderLine('Origin'));
           if ($request->getMethod() === 'OPTIONS' && $response->hasHeader('Allow')) {
+              // Built by Http\AllowedMethodsHandler, in exactly the format this header wants.
               $response = $response->withHeader('Access-Control-Allow-Methods', $response->getHeaderLine('Allow'));
           }
 
@@ -389,9 +394,10 @@ $response = $routes->handler($request, $responseFactory, $container)->handle($re
       }
   }
   ```
-- **Middleware that must run before matching** — anything that changes the request, decorates every
-  response including 404s, or sets the attributes filters read — goes in a stack around the
-  resolver; its last entry is a one-liner, `return $resolver->resolve($request)->handle($request);`.
+- **Middleware that must run before matching** — anything that changes the request, or sets the
+  attributes filters read — goes in a stack around the resolver instead; its last entry is a
+  one-liner, `return $resolver->resolve($request)->handle($request);`. Unlike `$routes->middleware()`,
+  this runs before the route is even looked up, so it can affect matching itself.
 
 ### URL generation
 
