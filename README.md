@@ -260,7 +260,11 @@ its filters, the only place that knows about the container.
   that behaves the same everywhere, or varies by request rather than by route; one filter class that
   needs different configuration per route, like a feature name, needs a separate instance per route
   (`new FeatureRouteFilter('beta')`, `new FeatureRouteFilter('bulk-edit')`) — a container resolving a
-  shared class name has no way to tell routes apart.
+  shared class name has no way to tell routes apart. Or a container identifier per configuration
+  instead, e.g. `->filter('feature.beta')` with the container resolving `'feature.beta'` to
+  `new FeatureRouteFilter('beta')`: that's how routes declared lazily, which can't take instances,
+  vary a filter per route. Any string that isn't an existing class name is taken as a container
+  identifier; one that resolves to something other than a `RouteFilter` throws once it's matched.
 - **Filters decide whether a route applies, never who is asking.** Authentication and permissions
   belong to middleware, which runs after matching.
 
@@ -331,6 +335,12 @@ $response = $builder->handler($request)->handle($request);
   autowires constructor arguments needs no registration of its own. Each middleware entry must resolve
   to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
   `Psr\Http\Server\RequestHandlerInterface`.
+- **A handler may also be `[target, 'method']`,** e.g. `[UserController::class, 'show']`: the target
+  is a class name or container identifier, resolved from the container, or an instance (eager routes
+  only). It's only resolved once the request gets past the route's middleware, and
+  `$target->show($request)` must return a `ResponseInterface`. The route's parameters are on the
+  request as usual. Declaring checks the pair's shape, and that the method exists when the target is
+  an instance or an existing class.
 - **`routes()` gives the tree to declare on eagerly,** the same one every call, so the `Registry`
   behind it can't get out of step with the routes. Declare everything before the first request: the
   compiled table is built once, on first use.
