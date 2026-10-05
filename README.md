@@ -129,36 +129,32 @@ matching, and let the closure capture it.
 
 ## HTTP routes
 
-`Http\Routes` is a higher-level declaration API with HTTP methods, groups and middleware.
-`Routes::define()` turns a definition into an ordinary route callable for `Router`, so caching
-works as described above:
+`Http\Routes` is a higher-level declaration API with HTTP methods, groups and middleware. A `group()`
+is itself a `Routes`, scoped by a prefix, its own middleware and its own tags; declaring runs
+immediately, like any other PHP code. `->compiled()` gives the callable `Router` takes, so caching
+works as described above — only turning the declared routes into the compiled matching structure is
+lazy and cache-gated, not declaring them:
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
 use SilenZ\Segmatch\Http\Routes;
 use SilenZ\Segmatch\Router;
 
+$routes = new Routes();
+$routes->get('/', HomeController::class);
+$routes->map(['GET', 'POST'], '/contact', ContactController::class);
+$routes->any('/webhooks/{provider}', WebhookController::class);
+
+$api = $routes->group('/api')->middleware('api');
+$api->group()->middleware('guest')->post('/login', [AuthController::class, 'login'])->name('login');
+
+$authed = $api->group()->middleware('auth');
+$authed->get('/users/{id}', [UserController::class, 'show'])->name('users.show');
+$authed->put('/users/{id}', [UserController::class, 'update']);
+$authed->group('/admin')->middleware('admin')->get('/stats', [AdminController::class, 'stats'])->middleware('audit');
+
 $router = new Router(
-    Routes::define(static function (Routes $r): void {
-        $r->get('/', HomeController::class);
-        $r->map(['GET', 'POST'], '/contact', ContactController::class);
-        $r->any('/webhooks/{provider}', WebhookController::class);
-
-        $r->group('/api')->middleware('api')->define(static function (Routes $r): void {
-            $r->group()->middleware('guest')->define(static function (Routes $r): void {
-                $r->post('/login', [AuthController::class, 'login'])->name('login');
-            });
-
-            $r->group()->middleware('auth')->define(static function (Routes $r): void {
-                $r->get('/users/{id}', [UserController::class, 'show'])->name('users.show');
-                $r->put('/users/{id}', [UserController::class, 'update']);
-
-                $r->group('/admin')->middleware('admin')->define(static function (Routes $r): void {
-                    $r->get('/stats', [AdminController::class, 'stats'])->middleware('audit');
-                });
-            });
-        });
-    }),
+    $routes->compiled(),
     cache: new FileCache(__DIR__ . '/var/cache'),
     cacheKey: 'routes-' . APP_VERSION,
 );
@@ -168,18 +164,21 @@ $router = new Router(
   route for one method; `map()` for several; `any()` for every method.
 - **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
   `->tag()` and `->guard()`.
-- **Groups:** `group()` takes an optional prefix, and `->middleware()` and `->define()` may be
-  called in any order. Groups with no prefix only add middleware. Groups may share a prefix or
-  nest freely, and a route only gets middleware from the groups it's declared in.
+- **Groups:** `group()` takes an optional prefix and returns a nested `Routes`; `->middleware()`,
+  `->tag()` and declaring routes on it may happen in any order, since accumulation only happens once
+  `compiled()` is used. Groups with no prefix only add middleware. Groups may share a prefix or nest
+  freely, and a route only gets middleware from the groups it's declared in.
 - **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
   `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
 - **Tags:** `->tag('public', ...)` on a route or a group labels routes for your own code. Group
   tags are inherited, outermost first, without duplicates. The router never interprets tags.
-- **Definitions as a class:** the definition callable may be an invokable class
-  (`Routes::define(new AppRoutes())`). `Router` also accepts any invokable that returns
-  `RouteDefinition`s directly.
+- **Definitions as a class:** nothing stops you from grouping declarations into an invokable class
+  and calling it yourself, e.g. `(new AppRoutes())($routes)`. `Router` also accepts any invokable
+  that returns `RouteDefinition`s directly, so you aren't limited to `Http\Routes` either.
 - **Handlers and middleware are stored in the cache,** so they must be plain data: class names,
-  `[Class::class, 'method']` arrays, strings, enums. Not closures.
+  `[Class::class, 'method']` arrays, strings, enums. Not closures or objects — those belong on
+  `Http\HandlerResolver::addMiddleware()` instead (see [Handling requests](#handling-requests)),
+  which runs uncached and outside any one route, so it applies even when nothing matches.
 
 ### Guards: methods and your own conditions
 
@@ -191,8 +190,8 @@ values in the controller. If a route really must be skipped for some values, so 
 route can take the request, write a guard for it.
 
 `Http\HandlerResolver` (see [Handling requests](#handling-requests)) is how you match: it checks
-the route's methods with `Http\Methods` — generic, container-free — and resolves and runs its
-guards, the only place that knows about the container.
+the route's methods with `Http\MethodNotAllowed` — generic, container-free — and resolves and runs
+its guards, the only place that knows about the container.
 
 - **A rejected route doesn't exist for that request.** Matching continues, so a request falls
   through to another route: `GET /users/new` skips `POST /users/new` and reaches
@@ -230,10 +229,9 @@ Tags let cross-cutting code act on routes without splitting them into more group
 auth middleware for the whole site that lets public routes through:
 
 ```php
-$r->group()->middleware(AuthMiddleware::class)->define(static function (Routes $r): void {
-    $r->get('/login', LoginForm::class)->tag('public');
-    $r->get('/account', ShowAccount::class);
-});
+$public = $r->group()->middleware(AuthMiddleware::class);
+$public->get('/login', LoginForm::class)->tag('public');
+$public->get('/account', ShowAccount::class);
 
 // in AuthMiddleware::process(), which Http\HandlerResolver runs inside each route's stack:
 $found = $request->getAttribute(Found::class);
