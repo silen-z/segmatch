@@ -17,7 +17,7 @@ namespace SilenZ\Segmatch;
  * configuration deciding which routes exist) must change what `cacheKey()` returns, e.g. by including
  * an application version or a configuration hash in it.
  */
-interface RouteTable
+abstract class RouteTable
 {
     /**
      * Identifies these routes in the cache, or `null` to never cache them — compiling on every
@@ -25,7 +25,7 @@ interface RouteTable
      * on every request Router answers (cache hit or not), so it must be cheap — never do the work
      * {@see definitions()} does to compute it.
      */
-    public function cacheKey(): ?string;
+    abstract public function cacheKey(): ?string;
 
     /**
      * The routes themselves (an array or a generator). Only called when the cache has no entry for
@@ -33,5 +33,5 @@ interface RouteTable
      *
      * @return iterable<int, RouteDefinition>
      */
-    public function definitions(): iterable;
+    abstract public function definitions(): iterable;
 }

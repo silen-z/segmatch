@@ -287,7 +287,7 @@ if (!in_array('public', $found->tags, true) && !$session->isLoggedIn()) {
 
 `Found` is only on the request inside the route's stack (see
 [Handling requests](#handling-requests)), so this works as route or group middleware, not as
-middleware that runs before `HandlerResolver`.
+middleware that runs before `RoutesHandlerBuilder`.
 
 ### Handling requests
 
@@ -297,11 +297,11 @@ request — the matched route's middleware and handler as one stack built with
 `NoMatch`, methods and filters yourself:
 
 ```php
-use SilenZ\Segmatch\Http\HandlerResolver;
+use SilenZ\Segmatch\Http\RoutesHandlerBuilder;
 
 // $responseFactory builds the default 404/405 responses; $container resolves filters, middleware and handlers
-$resolver = new HandlerResolver($router, $responseFactory, $container, routes: $routes);
-$response = $resolver->resolve($request)->handle($request);
+$resolver = new RoutesHandlerBuilder($router, $responseFactory, $container, routes: $routes);
+$response = $resolver->handler($request)->handle($request);
 ```
 
 Or, for the common case of one `Http\Routes` tree answering its own requests, skip building `$router`
@@ -320,7 +320,7 @@ $response = $routes->handler($request, $responseFactory, $container)->handle($re
   middleware entry must resolve to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
   `Psr\Http\Server\RequestHandlerInterface`.
 - **`$routes` is the `Http\Routes` that `$router` was built from, optional.** Needed whenever a
-  handler, middleware entry or filter was declared as a real instance or closure — `HandlerResolver`
+  handler, middleware entry or filter was declared as a real instance or closure — `RoutesHandlerBuilder`
   resolves those from `$routes`'s registry, which must be the same, current declaration `$router`'s
   routes came from, never a cached one, since the registry itself is never cached (see
   [HTTP routes](#http-routes)).

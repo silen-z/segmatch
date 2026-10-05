@@ -10,6 +10,7 @@ use PhpBench\Attributes\ParamProviders;
 use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 use SilenZ\Segmatch\Compiler;
+use SilenZ\Segmatch\Http\Registry;
 use SilenZ\Segmatch\Http\Routes;
 
 /**
@@ -52,7 +53,7 @@ final class DeclareBench
 
     private static function declare(string $fixture): Routes
     {
-        $routes = new Routes();
+        $routes = new Routes(new Registry());
         foreach (Fixtures::get($fixture)['routes'] as $index => $route) {
             $routes->get($route, $index);
         }

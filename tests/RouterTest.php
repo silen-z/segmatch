@@ -259,7 +259,6 @@ final class RouterTest extends TestCase
             'second',
         )], 'routes'), $cache);
 
-
         static::assertSame('first', self::route($laterRouter->match('/a')));
         static::assertSame('second', iterator_to_array($laterRouter->definitions())[0]->metadata);
     }

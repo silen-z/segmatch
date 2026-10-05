@@ -24,7 +24,4 @@ halstead = { exclude = ["src/Matcher.php", "tests/", "benchmarks/"] }
 # does Http\Routes with one helper per HTTP method.
 too-many-methods = { exclude = ["tests/", "benchmarks/", "src/Http/Routes.php"] }
 
-# Http\Found is a value object with one promoted property per field of the matched route.
-# Http\Routes::resolve() deliberately bundles HandlerResolver's own constructor options with
-# Router's two cache parameters, so the one call building both can't leave them mismatched.
-excessive-parameter-list = { exclude = ["src/Http/Found.php", "src/Http/Routes.php"] }
+no-else-clause = { enabled = false }

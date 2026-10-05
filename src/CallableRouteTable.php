@@ -11,7 +11,7 @@ use Closure;
  * a dedicated class. `$cacheKey` defaults to `null` (never cached), matching how easy it is to forget
  * one when all you have is a closure.
  */
-final class CallableRouteTable implements RouteTable
+final class CallableRouteTable extends RouteTable
 {
     /** @var Closure(): iterable<int, RouteDefinition> */
     private readonly Closure $definitions;
