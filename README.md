@@ -175,10 +175,29 @@ $router = new Router(
 - **Definitions as a class:** nothing stops you from grouping declarations into an invokable class
   and calling it yourself, e.g. `(new AppRoutes())($routes)`. `Router` also accepts any invokable
   that returns `RouteDefinition`s directly, so you aren't limited to `Http\Routes` either.
-- **Handlers and middleware are stored in the cache,** so they must be plain data: class names,
-  `[Class::class, 'method']` arrays, strings, enums. Not closures or objects — those belong on
-  `Http\HandlerResolver::addMiddleware()` instead (see [Handling requests](#handling-requests)),
-  which runs uncached and outside any one route, so it applies even when nothing matches.
+- **A handler, middleware entry or guard may be a real instance or closure,** not just a class name:
+  anything that isn't already cacheable plain data (scalars, null, enums, arrays of those) is
+  transparently wrapped into the tree's `Http\Registry` instead, so routes can still be cached without
+  giving up configured instances:
+
+  ```php
+  $routes->get('/reports', new ReportController($reportRepository));
+  $routes->group('/api')->middleware(new Cors($corsConfig))->get(...);
+  ```
+
+  Give the same tree's `Http\Registry` to `HandlerResolver`, every request, alongside a `Router` built
+  from `$routes->compiled()`:
+
+  ```php
+  $resolver = new HandlerResolver($router, $responseFactory, $container, registry: $routes->registry());
+  ```
+
+  Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
+  is declared, which is why `Http\Routes` always declares eagerly (see above): the ids baked into a
+  cached route's metadata only make sense together with the registry of the same, current declaration.
+  `Http\HandlerResolver::addMiddleware()` (see [Handling requests](#handling-requests)) is still the
+  right place for middleware that must apply even when nothing matches, like CORS on a 404 — that's a
+  different concern from a route's own handler, middleware or guards.
 
 ### Guards: methods and your own conditions
 
@@ -199,13 +218,15 @@ its guards, the only place that knows about the container.
 - **A 405's allowed methods count only routes rejected solely because of their method.** A route
   whose own guard fails, such as a feature switch, doesn't make a 405.
 - **A custom guard implements `Http\Guard`:** one method,
-  `accepts(mixed $config, ServerRequestInterface $request, array $params): bool`. The route stores
-  only the class name and the configuration, so both must be cacheable plain data; the guard
-  instance itself never is. Anything request-specific the guard needs goes into the request's PSR-7
-  attributes (`$request->getAttribute(...)`), loaded once before matching.
+  `accepts(mixed $config, ServerRequestInterface $request, array $params): bool`. Anything
+  request-specific the guard needs goes into the request's PSR-7 attributes
+  (`$request->getAttribute(...)`), loaded once before matching.
 - **Guards are resolved per match, not stored statically.** `$container?->get($guardClass) ?? new
   $guardClass()`, the same way as middleware and handlers — a guard with constructor dependencies
-  needs a container; a plain one doesn't.
+  needs a container; a plain one doesn't. `->guard(new MyGuard($dependency))` skips the container by
+  giving a ready instance instead of a class name — baking configuration into its constructor instead
+  of passing `$config` (which stays most useful for one guard class shared across routes that each
+  need it configured differently, like a feature name).
 - **Guards decide whether a route applies, never who is asking.** Authentication and permissions
   belong to middleware, which runs after matching.
 
@@ -224,6 +245,9 @@ Each route's metadata, as returned in `RouteMatch::$route`:
     ],
 ]
 ```
+
+`handler`, each `middleware` entry and each `guards` key is a class name, container identifier, or
+`Http\Registry` id standing in for a real instance or closure given instead.
 
 Tags let cross-cutting code act on routes without splitting them into more groups. For example, one
 auth middleware for the whole site that lets public routes through:
@@ -255,7 +279,7 @@ request — the matched route's middleware and handler as one stack built with
 use SilenZ\Segmatch\Http\HandlerResolver;
 
 // $responseFactory builds the default 404/405 responses; $container resolves guards, middleware and handlers
-$resolver = new HandlerResolver($router, $responseFactory, $container);
+$resolver = new HandlerResolver($router, $responseFactory, $container, registry: $routes->registry());
 $response = $resolver->resolve($request)->handle($request);
 ```
 
@@ -267,6 +291,10 @@ $response = $resolver->resolve($request)->handle($request);
   are resolved with `$container->get(...)`, or a plain `new $entry()` without a container. Each
   middleware entry must resolve to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
   `Psr\Http\Server\RequestHandlerInterface`.
+- **`$registry` is the `Http\Registry` of the routes given to this resolver's `Router`, optional.**
+  Needed whenever a handler, middleware entry or guard was declared as a real instance or closure;
+  it must be `$routes->registry()` of the same, current declaration — never a cached one, since the
+  registry itself is never cached (see [HTTP routes](#http-routes)).
 - **The match is a request attribute.** PSR-15 handlers take only the request, so
   `$request->getAttribute(Found::class)` gives the route's own middleware and handler an
   `Http\Found`: its `params` (URL-decoded, by name), `name` and `tags`. Parameters are deliberately
