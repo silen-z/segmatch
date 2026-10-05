@@ -29,21 +29,11 @@ final class Router
 
     /**
      * @param string $path request path without query string, starting with "/"
-     * @param null|false|callable(RouteMatch): bool $filter see {@see Matcher::match()}
+     * @param null|callable(RouteMatch): bool $filter see {@see Matcher::match()}
      */
-    public function match(string $path, callable|false|null $filter = null): RouteMatch|NoMatch
+    public function match(string $path, ?callable $filter = null): RouteMatch|NoMatch
     {
         return $this->matcher()->match($path, $filter);
-    }
-
-    /**
-     * @param string $path request path without query string, starting with "/"
-     *
-     * @return list<RouteMatch>
-     */
-    public function matchAll(string $path): array
-    {
-        return $this->matcher()->matchAll($path);
     }
 
     /**

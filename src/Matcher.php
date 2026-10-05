@@ -125,11 +125,10 @@ final readonly class Matcher
      * Filters may be called several times per match, so they must be cheap and free of side effects.
      *
      * @param string $path request path without query string, starting with "/"
-     * @param null|false|callable(RouteMatch): bool $filter receives the candidate match, returns
-     *     whether the route applies; `false` rejects every candidate without being called (see
-     *     {@see matchAll()}); `null` skips filtering entirely so the first declared route wins
+     * @param null|callable(RouteMatch): bool $filter receives the candidate match, returns whether the
+     *     route applies; `null` skips filtering entirely so the first declared route wins
      */
-    public function match(string $path, callable|false|null $filter = null): RouteMatch|NoMatch
+    public function match(string $path, ?callable $filter = null): RouteMatch|NoMatch
     {
         /** @var list<RouteMatch> $rejected */
         $rejected = [];
@@ -282,22 +281,6 @@ final readonly class Matcher
     }
 
     /**
-     * Every candidate route for a path, rejected, e.g. to build a 405's `Allow` header without
-     * matching for a specific request. Equivalent to `match($path, false)`, unwrapped.
-     *
-     * @param string $path request path without query string, starting with "/"
-     *
-     * @return list<RouteMatch>
-     */
-    public function matchAll(string $path): array
-    {
-        /** @var NoMatch */
-        $result = $this->match($path, false);
-
-        return $result->rejected;
-    }
-
-    /**
      * Offers candidates to the filter in declaration order, starting at $offset; the rejected ones
      * are collected. $offset lets a flattened {@see CatchEntry} be read in place, past its leading
      * flag, without slicing it into a new array first.
@@ -305,14 +288,13 @@ final readonly class Matcher
      * @param non-empty-list<int>|CatchEntry $candidates a list of ids, or (with $offset) a flattened
      *     catch entry; callers normalize a single id into a one-element list first
      * @param array<int, string> $values
-     * @param false|callable(RouteMatch): bool $filter `false` rejects every candidate without calling
-     *     it, see {@see matchAll()}
+     * @param callable(RouteMatch): bool $filter
      * @param list<RouteMatch> $rejected
      */
     private function select(
         array $candidates,
         array $values,
-        callable|false $filter,
+        callable $filter,
         array &$rejected,
         int $offset = 0,
     ): ?RouteMatch {
@@ -320,7 +302,7 @@ final readonly class Matcher
             /** @var int $routeId */
             $routeId = $candidates[$i];
             $match = $this->result($routeId, $values);
-            if ($filter !== false && $filter($match)) {
+            if ($filter($match)) {
                 return $match;
             }
 

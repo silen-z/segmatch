@@ -246,27 +246,7 @@ final class FilterTest extends TestCase
         static::assertSame(0, $calls);
     }
 
-    public function testFalseFilterRejectsEveryCandidate(): void
-    {
-        $matcher = self::matcher([
-            ['/users', ['name' => 'list', 'methods' => ['GET']]],
-            ['/users', ['name' => 'create', 'methods' => ['POST']]],
-        ]);
-
-        static::assertSame(['list', 'create'], self::rejectedNames($matcher->match('/users', false)));
-    }
-
-    public function testFalseFilterIsNeverInvokedAsACallable(): void
-    {
-        $matcher = self::matcher([['/users/{id}', ['name' => 'show']]]);
-
-        // `false` isn't callable; calling it like a filter closure would throw.
-        $result = $matcher->match('/users/1', false);
-
-        static::assertSame(['show'], self::rejectedNames($result));
-    }
-
-    public function testMatchAllReturnsEveryCandidateAcrossBranches(): void
+    public function testARejectingFilterSeesEveryCandidateAcrossBranches(): void
     {
         $matcher = self::matcher([
             ['/foo/bar', ['name' => 'static']],
@@ -274,19 +254,8 @@ final class FilterTest extends TestCase
             ['/foo/{rest+}', ['name' => 'catch']],
         ]);
 
-        static::assertSame(
-            ['static', 'param', 'catch'],
-            array_map(
-                static fn(RouteMatch $match): string => self::metadata($match->route)['name'],
-                $matcher->matchAll('/foo/bar'),
-            ),
-        );
-    }
+        $result = $matcher->match('/foo/bar', static fn(RouteMatch $_match): bool => false);
 
-    public function testMatchAllIsEmptyForAnUnknownPath(): void
-    {
-        $matcher = self::matcher([['/users', ['name' => 'list']]]);
-
-        static::assertSame([], $matcher->matchAll('/nope'));
+        static::assertSame(['static', 'param', 'catch'], self::rejectedNames($result));
     }
 }
