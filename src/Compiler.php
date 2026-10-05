@@ -21,7 +21,7 @@ use function sprintf;
  * by a {@see Cache\RouteCache} and loaded back from it.
  *
  * @psalm-type RouteIds = int|non-empty-list<int> a single route id, or several in declaration order
- * @psalm-type CatchEntry = non-empty-list<bool|int> a catch-all edge, flattened: index 0 is whether
+ * @psalm-type CatchEntry = list{bool, int, ...<int>} a catch-all edge, flattened: index 0 is whether
  *     it needs a non-empty rest ({name+}, not {name*}); every element after it is a route id, in
  *     declaration order
  * @psalm-type CompiledRoutes = array{
