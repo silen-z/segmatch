@@ -4,42 +4,28 @@ declare(strict_types=1);
 
 namespace SilenZ\Segmatch;
 
-use Closure;
 use SilenZ\Segmatch\Cache\RouteCache;
 use SilenZ\Segmatch\Internal\Layout;
 
 /**
  * Entry point: declares the routes lazily, caches them and matches paths.
  *
- * Like FastRoute's cached dispatcher, the route definition callback only runs when the cache has no
- * entry for the key. Nothing is invalidated automatically, so anything that changes which routes get
- * compiled (a deploy, configuration deciding which routes exist) must change the cache key, e.g. by
- * putting an application version or a configuration hash into it. Pass `null` as the cache to compile
- * on every request instead, e.g. in development.
+ * Like FastRoute's cached dispatcher, {@see RouteTable::definitions()} only runs when the cache has no
+ * entry for {@see RouteTable::cacheKey()}. Nothing is invalidated automatically, so anything that
+ * changes which routes get compiled (a deploy, configuration deciding which routes exist) must change
+ * what `cacheKey()` returns, e.g. by putting an application version or a configuration hash into it.
+ * A `cacheKey()` of `null`, or no `$cache` at all, compiles on every request instead.
  *
  * @psalm-import-type CompiledRoutes from Compiler
  */
 final class Router
 {
-    /** @var Closure(): iterable<mixed, RouteDefinition> */
-    private readonly Closure $routes;
-
     private ?Matcher $matcher = null;
 
-    /**
-     * @param callable(): iterable<mixed, RouteDefinition> $routes returns the routes (an array or a
-     *     generator), e.g. a closure, an invokable object or {@see Http\Routes}; only called when there
-     *     is no usable cache entry
-     * @param ?RouteCache $cache where compiled routes are kept; null disables caching
-     * @param string $cacheKey identifies these routes in the cache
-     */
     public function __construct(
-        callable $routes,
+        private readonly RouteTable $routes,
         private readonly ?RouteCache $cache = null,
-        private readonly string $cacheKey = 'routes',
-    ) {
-        $this->routes = $routes(...);
-    }
+    ) {}
 
     /**
      * @param string $path request path without query string, starting with "/"
@@ -62,15 +48,15 @@ final class Router
 
     /**
      * The routes as declared: full paths and metadata, uncompiled and never read from or written to
-     * the cache. Calls the routes callable every time, unlike {@see matcher()}; use it for tooling
-     * that needs the declarations themselves, e.g. an index of routes by name, or generating
+     * the cache. Calls {@see RouteTable::definitions()} every time, unlike {@see matcher()}; use it for
+     * tooling that needs the declarations themselves, e.g. an index of routes by name, or generating
      * documentation, not for matching requests.
      *
      * @return iterable<mixed, RouteDefinition>
      */
     public function definitions(): iterable
     {
-        return call_user_func($this->routes);
+        return $this->routes->definitions();
     }
 
     /**
@@ -86,14 +72,19 @@ final class Router
      */
     private function load(): array
     {
-        $cached = $this->cache?->get($this->cacheKey);
+        $key = $this->routes->cacheKey();
+        if ($this->cache === null || $key === null) {
+            return Compiler::compile($this->routes->definitions());
+        }
+
+        $cached = $this->cache->get($key);
         if ($cached !== null && ($cached['version'] ?? null) === Layout::FORMAT_VERSION) {
             /** @var CompiledRoutes $cached */
             return $cached;
         }
 
-        $compiled = Compiler::compile($this->definitions());
-        $this->cache?->set($this->cacheKey, $compiled);
+        $compiled = Compiler::compile($this->routes->definitions());
+        $this->cache->set($key, $compiled);
 
         return $compiled;
     }

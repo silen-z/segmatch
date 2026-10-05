@@ -14,19 +14,20 @@ come from `Http\Routes`, a declaration layer built on top of it (see [HTTP route
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\Router;
 
-$router = new Router(
+$routes = new CallableRouteTable(
     static fn(): array => [
         new RouteDefinition('/', ['handler' => 'home']),
         new RouteDefinition('/api/users/{id}', ['handler' => 'users.show', 'middleware' => ['auth']]),
         new RouteDefinition('/assets/{path+}', ['handler' => 'assets']),
     ],
-    cache: APP_DEBUG ? null : new FileCache(__DIR__ . '/var/cache'),
     cacheKey: 'routes-' . APP_VERSION,
 );
+$router = new Router($routes, cache: APP_DEBUG ? null : new FileCache(__DIR__ . '/var/cache'));
 
 $result = $router->match('/api/users/42');
 if ($result instanceof RouteMatch) {
@@ -35,10 +36,14 @@ if ($result instanceof RouteMatch) {
 }
 ```
 
-- **Routes come from a callable** returning an iterable of `RouteDefinition`s: an array, a
-  generator (`yield`, `yield from` to combine sources), or an invokable object. A
-  `RouteDefinition` parses its path when it's created, so a malformed path throws where it's
-  declared.
+- **Routes come from a `RouteTable`:** a cache key, and the route definitions behind it, as one
+  unit — a cache key that doesn't change with what `definitions()` produces risks silently serving
+  stale routes, so the two live together instead of being passed to `Router` as separate arguments.
+  `CallableRouteTable` wraps a plain callable for quick setups and tests; `definitions()` returns an
+  iterable of `RouteDefinition`s — an array, a generator (`yield`, `yield from` to combine sources),
+  or an invokable object. A `RouteDefinition` parses its path when it's created, so a malformed path
+  throws where it's declared. `Http\Routes` gives you one too (`$routes->table(...)`, see
+  [HTTP routes](#http-routes)), or implement `RouteTable` directly for anything more involved.
 - `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
   Parameter values are `rawurldecode`d.
 - `Router` is a thin entry point over the lower-level pieces. `new Matcher(Compiler::compile($routes))`
@@ -51,14 +56,17 @@ those. Anything else is rejected at compile time.
 
 Caching works like FastRoute's cached dispatcher:
 
-- **The route callback runs only on a cache miss.** It runs the first time the router is used and
-  the cache has no entry for `cacheKey`. On a warm request the routes are not declared at all; the
-  compiled table comes straight from the cache.
+- **`definitions()` runs only on a cache miss.** It runs the first time the router is used and the
+  cache has no entry for `cacheKey()`. On a warm request the routes are not declared at all; the
+  compiled table comes straight from the cache. `cacheKey()` itself is called every time, so it must
+  stay cheap — never do the work `definitions()` does to compute it.
 - **Nothing is invalidated automatically.** Anything that changes which routes get compiled must
-  change `cacheKey`: a deploy, or configuration that decides which routes exist. Put an application
-  version or a hash of that configuration into the key. Different keys are separate cache entries.
-- **`cache: null` disables caching.** Routes are then compiled whenever a `Router` is first used,
-  which is what you want in development.
+  change what `cacheKey()` returns: a deploy, or configuration that decides which routes exist. Put
+  an application version or a hash of that configuration into it. Different keys are separate cache
+  entries.
+- **A `null` key, or no `$cache` at all, disables caching.** Routes are then compiled whenever a
+  `Router` is first used, which is what you want in development — `CallableRouteTable`'s key
+  defaults to `null` for exactly this reason.
 - **Any storage works.** `Cache\RouteCache` is a two-method interface (`get(key)`, `set(key,
   compiled)`). `Cache\FileCache` stores each key as a PHP file in a directory, written atomically
   and loaded with `require`, so OPcache serves it from memory. A key made of letters, digits,
@@ -132,9 +140,9 @@ matching, and let the closure capture it.
 
 `Http\Routes` is a higher-level declaration API with HTTP methods, groups and middleware. A `group()`
 is itself a `Routes`, scoped by a prefix, its own middleware and its own tags; declaring runs
-immediately, like any other PHP code. `->compiled()` gives the callable `Router` takes, so caching
-works as described above — only turning the declared routes into the compiled matching structure is
-lazy and cache-gated, not declaring them:
+immediately, like any other PHP code. `->table($cacheKey)` gives the `RouteTable` `Router` takes, so
+caching works as described above — only turning the declared routes into the compiled matching
+structure is lazy and cache-gated, not declaring them:
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
@@ -155,9 +163,8 @@ $authed->put('/users/{id}', [UserController::class, 'update']);
 $authed->group('/admin')->middleware('admin')->get('/stats', [AdminController::class, 'stats'])->middleware('audit');
 
 $router = new Router(
-    $routes->compiled(),
+    $routes->table('routes-' . APP_VERSION),
     cache: new FileCache(__DIR__ . '/var/cache'),
-    cacheKey: 'routes-' . APP_VERSION,
 );
 ```
 
@@ -167,15 +174,17 @@ $router = new Router(
   `->tag()` and `->filter()`.
 - **Groups:** `group()` takes an optional prefix and returns a nested `Routes`; `->middleware()`,
   `->tag()` and declaring routes on it may happen in any order, since accumulation only happens once
-  `compiled()` is used. Groups with no prefix only add middleware. Groups may share a prefix or nest
-  freely, and a route only gets middleware from the groups it's declared in.
+  the tree is resolved into definitions (`compiled()` or `table()`). Groups with no prefix only add
+  middleware. Groups may share a prefix or nest freely, and a route only gets middleware from the
+  groups it's declared in.
 - **Middleware order:** enclosing groups' middleware first, outermost first, then the route's own.
   `/api/admin/stats` above gets `['api', 'auth', 'admin', 'audit']`.
 - **Tags:** `->tag('public', ...)` on a route or a group labels routes for your own code. Group
   tags are inherited, outermost first, without duplicates. The router never interprets tags.
 - **Definitions as a class:** nothing stops you from grouping declarations into an invokable class
-  and calling it yourself, e.g. `(new AppRoutes())($routes)`. `Router` also accepts any invokable
-  that returns `RouteDefinition`s directly, so you aren't limited to `Http\Routes` either.
+  and calling it yourself, e.g. `(new AppRoutes())($routes)`. You aren't limited to `Http\Routes`
+  either — `CallableRouteTable` wraps any callable returning `RouteDefinition`s directly, or
+  implement `RouteTable` yourself for anything more involved (see [Caching](#caching)).
 - **A handler, middleware entry or filter may be a real instance or closure,** not just a class name:
   anything that isn't already cacheable plain data (scalars, null, enums, arrays of those) is
   transparently wrapped into the tree's `Http\Registry` instead, so routes can still be cached without
@@ -187,7 +196,7 @@ $router = new Router(
   ```
 
   Give the same tree's `Http\Registry` to `HandlerResolver`, every request, alongside a `Router` built
-  from `$routes->compiled()`:
+  from `$routes->table(...)`:
 
   ```php
   $resolver = new HandlerResolver($router, $responseFactory, $container, registry: $routes->registry());

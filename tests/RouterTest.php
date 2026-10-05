@@ -7,11 +7,13 @@ namespace SilenZ\Segmatch\Tests;
 use ArrayObject;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Cache\RouteCache;
+use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\NoMatch;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
 use SilenZ\Segmatch\Router;
+use SilenZ\Segmatch\RouteTable;
 
 final class RouterTest extends TestCase
 {
@@ -36,6 +38,14 @@ final class RouterTest extends TestCase
         };
     }
 
+    /**
+     * @param callable(): iterable<RouteDefinition> $definitions
+     */
+    private static function table(callable $definitions, ?string $cacheKey = null): RouteTable
+    {
+        return new CallableRouteTable($definitions, $cacheKey);
+    }
+
     private static function route(RouteMatch|NoMatch $result): mixed
     {
         return $result instanceof RouteMatch ? $result->route : null;
@@ -43,7 +53,7 @@ final class RouterTest extends TestCase
 
     public function testMatchesWithoutACache(): void
     {
-        $router = new Router(static fn(): array => [new RouteDefinition('/users/{id}', 'user')]);
+        $router = new Router(self::table(static fn(): array => [new RouteDefinition('/users/{id}', 'user')]));
 
         $result = $router->match('/users/7');
 
@@ -59,13 +69,13 @@ final class RouterTest extends TestCase
                 yield new RouteDefinition('/users', 'users');
                 yield new RouteDefinition('/users/{id}', 'user');
             };
-        $router = new Router(
+        $router = new Router(self::table(
             /** @return iterable<RouteDefinition> */
             static function () use ($users): iterable {
                 yield new RouteDefinition('/', 'home');
                 yield from $users();
             },
-        );
+        ));
 
         static::assertSame('home', self::route($router->match('/')));
         static::assertSame('user', self::route($router->match('/users/7')));
@@ -80,8 +90,8 @@ final class RouterTest extends TestCase
             return [new RouteDefinition('/a', 'a')];
         };
 
-        new Router($define)->match('/a');
-        new Router($define)->match('/a');
+        new Router(self::table($define))->match('/a');
+        new Router(self::table($define))->match('/a');
 
         static::assertCount(2, $calls);
     }
@@ -89,11 +99,11 @@ final class RouterTest extends TestCase
     public function testRoutesAreDeclaredLazilyAndOnlyOncePerInstance(): void
     {
         $calls = new ArrayObject();
-        $router = new Router(static function () use ($calls): array {
+        $router = new Router(self::table(static function () use ($calls): array {
             $calls->append(true);
 
             return [new RouteDefinition('/a', 'a')];
-        });
+        }));
 
         static::assertCount(0, $calls);
 
@@ -114,8 +124,8 @@ final class RouterTest extends TestCase
             return [new RouteDefinition('/a', 'a')];
         };
 
-        new Router($define, $cache)->match('/a');
-        $result = new Router($define, $cache)->match('/a');
+        new Router(self::table($define, 'routes'), $cache)->match('/a');
+        $result = new Router(self::table($define, 'routes'), $cache)->match('/a');
 
         static::assertCount(1, $calls);
         static::assertSame('a', self::route($result));
@@ -124,9 +134,11 @@ final class RouterTest extends TestCase
     public function testExistingEntryIsUsedEvenWhenTheDefinitionChanges(): void
     {
         $cache = self::memoryCache();
-        new Router(static fn(): array => [new RouteDefinition('/old', 'old')], $cache)->match('/old');
+        new Router(self::table(static fn(): array => [new RouteDefinition('/old', 'old')], 'routes'), $cache)->match(
+            '/old',
+        );
 
-        $router = new Router(static fn(): array => [new RouteDefinition('/new', 'new')], $cache);
+        $router = new Router(self::table(static fn(): array => [new RouteDefinition('/new', 'new')], 'routes'), $cache);
 
         static::assertSame('old', self::route($router->match('/old')));
         static::assertNull(self::route($router->match('/new')));
@@ -135,11 +147,27 @@ final class RouterTest extends TestCase
     public function testDifferentKeysKeepSeparateEntries(): void
     {
         $cache = self::memoryCache();
-        $v1 = new Router(static fn(): array => [new RouteDefinition('/a', 'v1')], $cache, 'routes-v1');
-        $v2 = new Router(static fn(): array => [new RouteDefinition('/a', 'v2')], $cache, 'routes-v2');
+        $v1 = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'v1')], 'routes-v1'), $cache);
+        $v2 = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'v2')], 'routes-v2'), $cache);
 
         static::assertSame('v1', self::route($v1->match('/a')));
         static::assertSame('v2', self::route($v2->match('/a')));
+    }
+
+    public function testANullKeyNeverCachesEvenWithACacheConfigured(): void
+    {
+        $cache = self::memoryCache();
+        $calls = new ArrayObject();
+        $define = static function () use ($calls): array {
+            $calls->append(true);
+
+            return [new RouteDefinition('/a', 'a')];
+        };
+
+        new Router(self::table($define), $cache)->match('/a');
+        new Router(self::table($define), $cache)->match('/a');
+
+        static::assertCount(2, $calls);
     }
 
     public function testEntryFromAnIncompatibleVersionIsRecompiled(): void
@@ -147,18 +175,21 @@ final class RouterTest extends TestCase
         $cache = self::memoryCache();
         $cache->set('routes', ['version' => 0] + Compiler::compile([]));
 
-        $router = new Router(static fn(): array => [new RouteDefinition('/a', 'a')], $cache);
+        $router = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'a')], 'routes'), $cache);
 
         static::assertSame('a', self::route($router->match('/a')));
-        static::assertSame('a', self::route(new Router(static fn(): array => [], $cache)->match('/a')));
+        static::assertSame(
+            'a',
+            self::route(new Router(self::table(static fn(): array => [], 'routes'), $cache)->match('/a')),
+        );
     }
 
     public function testFilterIsPassedThrough(): void
     {
-        $router = new Router(static fn(): array => [
+        $router = new Router(self::table(static fn(): array => [
             new RouteDefinition('/users', ['methods' => ['GET']]),
             new RouteDefinition('/users', ['methods' => ['POST']]),
-        ]);
+        ]));
 
         $result = $router->match(
             '/users',
@@ -170,10 +201,10 @@ final class RouterTest extends TestCase
 
     public function testMatchAllReturnsEveryCandidateForThePath(): void
     {
-        $router = new Router(static fn(): array => [
+        $router = new Router(self::table(static fn(): array => [
             new RouteDefinition('/users', ['methods' => ['GET']]),
             new RouteDefinition('/users', ['methods' => ['POST']]),
-        ]);
+        ]));
 
         static::assertSame(
             [['methods' => ['GET']], ['methods' => ['POST']]],
@@ -183,17 +214,17 @@ final class RouterTest extends TestCase
 
     public function testMatchAllIsEmptyForAnUnknownPath(): void
     {
-        $router = new Router(static fn(): array => [new RouteDefinition('/users', 'list')]);
+        $router = new Router(self::table(static fn(): array => [new RouteDefinition('/users', 'list')]));
 
         static::assertSame([], $router->matchAll('/nope'));
     }
 
     public function testDefinitionsReturnsTheRoutesAsDeclared(): void
     {
-        $router = new Router(static fn(): array => [
+        $router = new Router(self::table(static fn(): array => [
             new RouteDefinition('/users', 'list'),
             new RouteDefinition('/users/{id}', 'show'),
-        ]);
+        ]));
 
         $definitions = [...$router->definitions()];
 
@@ -205,11 +236,11 @@ final class RouterTest extends TestCase
     public function testDefinitionsCallsTheRoutesCallableEveryTime(): void
     {
         $calls = new ArrayObject();
-        $router = new Router(static function () use ($calls): array {
+        $router = new Router(self::table(static function () use ($calls): array {
             $calls->append(true);
 
             return [new RouteDefinition('/a', 'a')];
-        });
+        }));
 
         [...$router->definitions()];
         [...$router->definitions()];
@@ -220,10 +251,13 @@ final class RouterTest extends TestCase
     public function testDefinitionsIgnoresTheCache(): void
     {
         $cache = self::memoryCache();
-        $router = new Router(static fn(): array => [new RouteDefinition('/a', 'first')], $cache);
+        $router = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'first')], 'routes'), $cache);
         $router->match('/a'); // populates the cache
 
-        $laterRouter = new Router(static fn(): array => [new RouteDefinition('/a', 'second')], $cache);
+        $laterRouter = new Router(self::table(static fn(): array => [new RouteDefinition(
+            '/a',
+            'second',
+        )], 'routes'), $cache);
 
         static::assertSame('first', self::route($laterRouter->match('/a')));
         static::assertSame('second', [...$laterRouter->definitions()][0]->metadata);

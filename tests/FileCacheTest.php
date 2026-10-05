@@ -7,6 +7,7 @@ namespace SilenZ\Segmatch\Tests;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\RouteDefinition;
 use SilenZ\Segmatch\RouteMatch;
@@ -106,9 +107,15 @@ final class FileCacheTest extends TestCase
     public function testRouterUsesTheFileCache(): void
     {
         $cache = new FileCache($this->directory);
-        new Router(static fn(): array => [new RouteDefinition('/a', 'a')], $cache, 'app')->match('/a');
+        new Router(new CallableRouteTable(static fn(): array => [new RouteDefinition(
+            '/a',
+            'a',
+        )], 'app'), $cache)->match('/a');
 
-        $router = new Router(static fn() => throw new LogicException('should not compile'), $cache, 'app');
+        $router = new Router(
+            new CallableRouteTable(static fn() => throw new LogicException('should not compile'), 'app'),
+            $cache,
+        );
 
         $result = $router->match('/a');
 

@@ -8,6 +8,7 @@ use FastRoute\Dispatcher;
 use FastRoute\RouteCollector as FastRouteCollector;
 use LogicException;
 use SilenZ\Segmatch\Cache\FileCache;
+use SilenZ\Segmatch\CallableRouteTable;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\RouteDefinition;
@@ -82,9 +83,8 @@ final class Routers
     public static function cachedFlat(string $fixture): Router
     {
         return new Router(
-            static fn(): iterable => throw new LogicException('Cache entry missing.'),
+            new CallableRouteTable(static fn(): iterable => throw new LogicException('Cache entry missing.'), $fixture),
             new FileCache(self::CACHE_DIRECTORY),
-            $fixture,
         );
     }
 
