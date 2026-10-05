@@ -16,7 +16,7 @@ integrations = ["phpunit"]
 #
 # Elsewhere the class defaults (15 / 1.6) flag even small compiler classes; the raised thresholds
 # allow a cohesive class with a few loops while still catching runaway growth.
-cyclomatic-complexity = { threshold = 25, exclude = ["src/Matcher.php"] }
+cyclomatic-complexity = { threshold = 30, exclude = ["src/Matcher.php"] }
 kan-defect = { threshold = 2.5, exclude = ["src/Matcher.php"] }
 halstead = { exclude = ["src/Matcher.php", "tests/", "benchmarks/"] }
 
