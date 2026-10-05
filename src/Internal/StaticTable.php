@@ -13,7 +13,7 @@ use SilenZ\Segmatch\RouteDefinition;
  * This does not change matching results. A request equal to such a path would follow static edges
  * all the way down (static wins at every node) and stop on exactly those routes; and since their
  * node is only reachable through static edges, no other request can end there. Tree nodes that only
- * existed for these routes are pruned afterwards. If a guard rejects every route found here, the
+ * existed for these routes are pruned afterwards. If a filter rejects every route found here, the
  * matcher continues in the tree, exactly as it would backtrack from that node.
  *
  * @internal

@@ -43,11 +43,11 @@ final class Router
 
     /**
      * @param string $path request path without query string, starting with "/"
-     * @param null|false|callable(mixed, array<string, string>): bool $guard see {@see Matcher::match()}
+     * @param null|false|callable(RouteMatch): bool $filter see {@see Matcher::match()}
      */
-    public function match(string $path, callable|false|null $guard = null): RouteMatch|NoMatch
+    public function match(string $path, callable|false|null $filter = null): RouteMatch|NoMatch
     {
-        return $this->matcher()->match($path, $guard);
+        return $this->matcher()->match($path, $filter);
     }
 
     /**

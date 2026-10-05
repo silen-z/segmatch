@@ -22,18 +22,18 @@ use function usort;
  *
  * Every route is checked against the request segment by segment. Matching routes are ordered by
  * precedence (per segment static < parameter < catch-all, a route ending earlier first, then
- * declaration order) and offered to the guard in that order. No tree, no static table, no
+ * declaration order) and offered to the filter in that order. No tree, no static table, no
  * backtracking.
  */
 final class RouteOracle
 {
     /**
      * @param list<string> $routes route paths; a route's metadata is its index
-     * @param null|Closure(int): bool $guard
+     * @param null|Closure(int): bool $filter
      *
      * @return array{route: ?int, params: array<string, string>, rejected: list<int>}
      */
-    public static function match(array $routes, string $path, ?Closure $guard): array
+    public static function match(array $routes, string $path, ?Closure $filter): array
     {
         $candidates = [];
         if (str_starts_with($path, '/')) {
@@ -54,7 +54,7 @@ final class RouteOracle
 
         $rejected = [];
         foreach ($candidates as $candidate) {
-            if ($guard === null || $guard($candidate['index'])) {
+            if ($filter === null || $filter($candidate['index'])) {
                 return ['route' => $candidate['index'], 'params' => $candidate['params'], 'rejected' => []];
             }
 

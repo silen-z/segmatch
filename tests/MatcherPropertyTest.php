@@ -25,7 +25,7 @@ use function str_ends_with;
 use function substr;
 
 /**
- * Compares the matcher with {@see RouteOracle} on random route sets, requests and guards.
+ * Compares the matcher with {@see RouteOracle} on random route sets, requests and filters.
  */
 final class MatcherPropertyTest extends TestCase
 {
@@ -66,13 +66,15 @@ final class MatcherPropertyTest extends TestCase
             $path = self::randomPath();
             $salt = mt_rand();
             // Accepts roughly two thirds of the candidates, differently for every request.
-            $guard = static fn(mixed $route): bool => (
-                is_int($route)
-                && (crc32($path . '|' . $route . '|' . $salt) % 3) !== 0
-            );
+            $accepts = static fn(int $index): bool => (crc32($path . '|' . $index . '|' . $salt) % 3) !== 0;
+            $matcherFilter = static fn(RouteMatch $match): bool => is_int($match->route) && $accepts($match->route);
 
             self::assertSameResult(RouteOracle::match($routes, $path, null), $matcher->match($path), $path);
-            self::assertSameResult(RouteOracle::match($routes, $path, $guard), $matcher->match($path, $guard), $path);
+            self::assertSameResult(
+                RouteOracle::match($routes, $path, $accepts),
+                $matcher->match($path, $matcherFilter),
+                $path,
+            );
         }
     }
 

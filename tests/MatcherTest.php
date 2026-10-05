@@ -25,11 +25,11 @@ final class MatcherTest extends TestCase
     }
 
     /**
-     * @param null|Closure(mixed, array<string, string>): bool $guard
+     * @param null|Closure(RouteMatch): bool $filter
      */
-    private static function find(Matcher $matcher, string $path, ?Closure $guard = null): ?RouteMatch
+    private static function find(Matcher $matcher, string $path, ?Closure $filter = null): ?RouteMatch
     {
-        $result = $matcher->match($path, $guard);
+        $result = $matcher->match($path, $filter);
 
         return $result instanceof RouteMatch ? $result : null;
     }

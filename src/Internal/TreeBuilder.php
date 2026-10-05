@@ -14,7 +14,7 @@ use function sprintf;
 /**
  * Builds the compiler's intermediate tree from route declarations.
  *
- * Several routes may share a path; they are kept in declaration order and a match-time guard
+ * Several routes may share a path; they are kept in declaration order and a match-time filter
  * chooses between them. The only conflict left is mixing `{name*}` and `{name+}` on one node.
  *
  * @internal

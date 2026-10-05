@@ -153,14 +153,17 @@ final class RouterTest extends TestCase
         static::assertSame('a', self::route(new Router(static fn(): array => [], $cache)->match('/a')));
     }
 
-    public function testGuardIsPassedThrough(): void
+    public function testFilterIsPassedThrough(): void
     {
         $router = new Router(static fn(): array => [
             new RouteDefinition('/users', ['methods' => ['GET']]),
             new RouteDefinition('/users', ['methods' => ['POST']]),
         ]);
 
-        $result = $router->match('/users', static fn(mixed $route): bool => $route === ['methods' => ['POST']]);
+        $result = $router->match(
+            '/users',
+            static fn(RouteMatch $match): bool => $match->route === ['methods' => ['POST']],
+        );
 
         static::assertSame(['methods' => ['POST']], self::route($result));
     }

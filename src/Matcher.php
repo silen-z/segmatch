@@ -101,23 +101,22 @@ final readonly class Matcher
     /**
      * Finds the route for a path.
      *
-     * Without a guard, the first declared route of the best path wins. With a guard, every candidate
+     * Without a filter, the first declared route of the best path wins. With a filter, every candidate
      * is offered to it in precedence order (and, among routes with the same path, declaration order);
      * a rejected route is treated as if it did not exist, so matching continues and may backtrack into
      * parameter and catch-all branches.
      *
-     * A guard decides whether a route applies to the request: its HTTP method, host, content type,
+     * A filter decides whether a route applies to the request: its HTTP method, host, content type,
      * parameter format, a feature switch. It must not check who is asking (authentication, permissions):
      * that is middleware's job after matching, since a rejected route can fall through to another one.
-     * Guards may be called several times per match, so they must be cheap and free of side effects.
+     * Filters may be called several times per match, so they must be cheap and free of side effects.
      *
      * @param string $path request path without query string, starting with "/"
-     * @param null|false|callable(mixed, array<string, string>): bool $guard receives route metadata
-     *     and URL-decoded parameters, returns whether the route applies; `false` rejects every
-     *     candidate without being called (see {@see matchAll()}); `null` skips guarding entirely so
-     *     the first declared route wins
+     * @param null|false|callable(RouteMatch): bool $filter receives the candidate match, returns
+     *     whether the route applies; `false` rejects every candidate without being called (see
+     *     {@see matchAll()}); `null` skips filtering entirely so the first declared route wins
      */
-    public function match(string $path, callable|false|null $guard = null): RouteMatch|NoMatch
+    public function match(string $path, callable|false|null $filter = null): RouteMatch|NoMatch
     {
         /** @var list<RouteMatch> $rejected */
         $rejected = [];
@@ -125,11 +124,11 @@ final readonly class Matcher
         // Routes without parameters are answered by a single hash lookup.
         $static = $this->static[$path] ?? Layout::NONE;
         if ($static !== Layout::NONE) {
-            if ($guard === null) {
+            if ($filter === null) {
                 return new RouteMatch($this->metadata[is_int($static) ? $static : $static[0]], []);
             }
 
-            $match = $this->select(is_int($static) ? [$static] : $static, [], $guard, $rejected);
+            $match = $this->select(is_int($static) ? [$static] : $static, [], $filter, $rejected);
             if ($match !== null) {
                 return $match;
             }
@@ -174,9 +173,9 @@ final readonly class Matcher
                 if ($index === $count) {
                     $routes = $ends[$node] ?? Layout::NONE;
                     if ($routes !== Layout::NONE) {
-                        $match = $guard === null
+                        $match = $filter === null
                             ? $this->result(is_int($routes) ? $routes : $routes[0], $values)
-                            : $this->select(is_int($routes) ? [$routes] : $routes, $values, $guard, $rejected);
+                            : $this->select(is_int($routes) ? [$routes] : $routes, $values, $filter, $rejected);
                         if ($match !== null) {
                             return $match;
                         }
@@ -185,9 +184,9 @@ final readonly class Matcher
                     $catch = $catches[$node] ?? Layout::NONE;
                     if ($catch !== Layout::NONE && !$catch[0]) {
                         $values[$paramCount] = '';
-                        $match = $guard === null
+                        $match = $filter === null
                             ? $this->result($catch[1], $values)
-                            : $this->select($catch, $values, $guard, $rejected, offset: 1);
+                            : $this->select($catch, $values, $filter, $rejected, offset: 1);
                         if ($match !== null) {
                             return $match;
                         }
@@ -247,9 +246,9 @@ final readonly class Matcher
                     $rest = implode('/', array_slice($segments, $index));
                     if ($rest !== '' || !$catch[0]) {
                         $values[$paramCount] = $rest;
-                        $match = $guard === null
+                        $match = $filter === null
                             ? $this->result($catch[1], $values)
-                            : $this->select($catch, $values, $guard, $rejected, offset: 1);
+                            : $this->select($catch, $values, $filter, $rejected, offset: 1);
                         if ($match !== null) {
                             return $match;
                         }
@@ -286,21 +285,21 @@ final readonly class Matcher
     }
 
     /**
-     * Offers candidates to the guard in declaration order, starting at $offset; the rejected ones
+     * Offers candidates to the filter in declaration order, starting at $offset; the rejected ones
      * are collected. $offset lets a flattened {@see CatchEntry} be read in place, past its leading
      * flag, without slicing it into a new array first.
      *
      * @param non-empty-list<int>|CatchEntry $candidates a list of ids, or (with $offset) a flattened
      *     catch entry; callers normalize a single id into a one-element list first
      * @param array<int, string> $values
-     * @param false|callable(mixed, array<string, string>): bool $guard `false` rejects every candidate
-     *     without calling it, see {@see matchAll()}
+     * @param false|callable(RouteMatch): bool $filter `false` rejects every candidate without calling
+     *     it, see {@see matchAll()}
      * @param list<RouteMatch> $rejected
      */
     private function select(
         array $candidates,
         array $values,
-        callable|false $guard,
+        callable|false $filter,
         array &$rejected,
         int $offset = 0,
     ): ?RouteMatch {
@@ -308,7 +307,7 @@ final readonly class Matcher
             /** @var int $routeId */
             $routeId = $candidates[$i];
             $match = $this->result($routeId, $values);
-            if ($guard !== false && $guard($match->route, $match->params)) {
+            if ($filter !== false && $filter($match)) {
                 return $match;
             }
 

@@ -17,7 +17,7 @@ use function array_map;
 use function ctype_digit;
 use function in_array;
 
-final class GuardTest extends TestCase
+final class FilterTest extends TestCase
 {
     /**
      * @param list<array{string, array{name: string, methods?: list<string>}}> $routes
@@ -33,13 +33,13 @@ final class GuardTest extends TestCase
     }
 
     /**
-     * @return Closure(mixed, array<string, string>): bool
+     * @return Closure(RouteMatch): bool
      */
     private static function method(string $method): Closure
     {
-        return static fn(mixed $route): bool => in_array(
+        return static fn(RouteMatch $match): bool => in_array(
             $method,
-            self::metadata($route)['methods'] ?? [],
+            self::metadata($match->route)['methods'] ?? [],
             strict: true,
         );
     }
@@ -80,7 +80,7 @@ final class GuardTest extends TestCase
         );
     }
 
-    public function testWithoutGuardTheFirstDeclaredRouteOfAPathWins(): void
+    public function testWithoutAFilterTheFirstDeclaredRouteOfAPathWins(): void
     {
         $matcher = self::matcher([
             ['/users', ['name' => 'list']],
@@ -96,7 +96,7 @@ final class GuardTest extends TestCase
         static::assertSame('files', self::routeName($matcher->match('/files/a/b')));
     }
 
-    public function testGuardChoosesBetweenRoutesOfTheSamePath(): void
+    public function testAFilterChoosesBetweenRoutesOfTheSamePath(): void
     {
         $matcher = self::matcher([
             ['/users', ['name' => 'list', 'methods' => ['GET']]],
@@ -185,17 +185,15 @@ final class GuardTest extends TestCase
         static::assertSame('shallow', self::routeName($matcher->match('/a/b/c', self::method('GET'))));
     }
 
-    public function testGuardReceivesDecodedParametersForConstraints(): void
+    public function testFilterReceivesDecodedParametersForConstraints(): void
     {
         $matcher = self::matcher([
             ['/users/{id}', ['name' => 'by-id']],
             ['/users/{slug}', ['name' => 'by-slug']],
         ]);
-        $numericId =
-            /** @param array<string, string> $params */
-            static fn(mixed $_route, array $params): bool => (
-                !array_key_exists('id', $params) || ctype_digit($params['id'])
-            );
+        $numericId = static fn(RouteMatch $match): bool => (
+            !array_key_exists('id', $match->params) || ctype_digit($match->params['id'])
+        );
 
         $byId = $matcher->match('/users/42', $numericId);
         $bySlug = $matcher->match('/users/john%20doe', $numericId);
@@ -206,7 +204,7 @@ final class GuardTest extends TestCase
         static::assertSame(['slug' => 'john doe'], $bySlug->params);
     }
 
-    public function testEmptyCatchAllIsOfferedToTheGuard(): void
+    public function testEmptyCatchAllIsOfferedToTheFilter(): void
     {
         $matcher = self::matcher([
             ['/docs/{page*}', ['name' => 'docs', 'methods' => ['GET']]],
@@ -226,28 +224,28 @@ final class GuardTest extends TestCase
             ['/{path+}', ['name' => 'frontend']],
         ]);
         $disabled = ['beta' => true];
-        $enabled = static fn(mixed $route): bool => !($disabled[self::metadata($route)['name']] ?? false);
+        $enabled = static fn(RouteMatch $match): bool => !($disabled[self::metadata($match->route)['name']] ?? false);
 
         static::assertSame('frontend', self::routeName($matcher->match('/beta/1', $enabled)));
     }
 
-    public function testGuardIsNotCalledWhenNothingMatchesThePath(): void
+    public function testFilterIsNotCalledWhenNothingMatchesThePath(): void
     {
         $matcher = self::matcher([['/users/{id}', ['name' => 'show']]]);
         $calls = 0;
-        $guard = static function () use (&$calls): bool {
+        $filter = static function () use (&$calls): bool {
             $calls++;
 
             return true;
         };
 
-        $matcher->match('/posts/1', $guard);
-        $matcher->match('/users/1/edit', $guard);
+        $matcher->match('/posts/1', $filter);
+        $matcher->match('/users/1/edit', $filter);
 
         static::assertSame(0, $calls);
     }
 
-    public function testFalseGuardRejectsEveryCandidate(): void
+    public function testFalseFilterRejectsEveryCandidate(): void
     {
         $matcher = self::matcher([
             ['/users', ['name' => 'list', 'methods' => ['GET']]],
@@ -257,11 +255,11 @@ final class GuardTest extends TestCase
         static::assertSame(['list', 'create'], self::rejectedNames($matcher->match('/users', false)));
     }
 
-    public function testFalseGuardIsNeverInvokedAsACallable(): void
+    public function testFalseFilterIsNeverInvokedAsACallable(): void
     {
         $matcher = self::matcher([['/users/{id}', ['name' => 'show']]]);
 
-        // `false` isn't callable; calling it like a guard closure would throw.
+        // `false` isn't callable; calling it like a filter closure would throw.
         $result = $matcher->match('/users/1', false);
 
         static::assertSame(['show'], self::rejectedNames($result));
@@ -277,7 +275,10 @@ final class GuardTest extends TestCase
 
         static::assertSame(
             ['static', 'param', 'catch'],
-            array_map(static fn(RouteMatch $match): string => self::metadata($match->route)['name'], $matcher->matchAll('/foo/bar')),
+            array_map(
+                static fn(RouteMatch $match): string => self::metadata($match->route)['name'],
+                $matcher->matchAll('/foo/bar'),
+            ),
         );
     }
 
