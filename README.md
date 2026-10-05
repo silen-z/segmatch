@@ -195,11 +195,20 @@ $router = new Router(
   $routes->group('/api')->middleware(new Cors($corsConfig))->get(...);
   ```
 
-  Give the same tree's `Http\Registry` to `HandlerResolver`, every request, alongside a `Router` built
-  from `$routes->table(...)`:
+  `Http\HandlerResolver` needs the same tree's registry to resolve those ids back, so it takes
+  `$routes` itself, not just a `Router` built from it — `$router` must still be built from the same
+  `$routes->table(...)`, since pairing a `Router` with a different declaration's registry would
+  resolve the wrong instance, or none at all:
 
   ```php
-  $resolver = new HandlerResolver($router, $responseFactory, $container, registry: $routes->registry());
+  $resolver = new HandlerResolver($router, $responseFactory, $container, routes: $routes);
+  ```
+
+  `->resolve()` builds both together from one `Routes`, for the common case of one tree answering its
+  own requests, so this can't be gotten wrong:
+
+  ```php
+  $response = $routes->resolve($request, $responseFactory, $container)->handle($request);
   ```
 
   Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
@@ -207,7 +216,8 @@ $router = new Router(
   cached route's metadata only make sense together with the registry of the same, current declaration.
   `Http\HandlerResolver::addMiddleware()` (see [Handling requests](#handling-requests)) is still the
   right place for middleware that must apply even when nothing matches, like CORS on a 404 — that's a
-  different concern from a route's own handler, middleware or filters.
+  different concern from a route's own handler, middleware or filters, and not something `->resolve()`
+  exposes; use `HandlerResolver` directly for it.
 
 ### Filters: methods and your own conditions
 
@@ -292,8 +302,15 @@ request — the matched route's middleware and handler as one stack built with
 use SilenZ\Segmatch\Http\HandlerResolver;
 
 // $responseFactory builds the default 404/405 responses; $container resolves filters, middleware and handlers
-$resolver = new HandlerResolver($router, $responseFactory, $container, registry: $routes->registry());
+$resolver = new HandlerResolver($router, $responseFactory, $container, routes: $routes);
 $response = $resolver->resolve($request)->handle($request);
+```
+
+Or, for the common case of one `Http\Routes` tree answering its own requests, skip building `$router`
+and `$resolver` separately:
+
+```php
+$response = $routes->resolve($request, $responseFactory, $container)->handle($request);
 ```
 
 - **`$request` is a PSR-7 `ServerRequestInterface`.** The path comes from
@@ -304,10 +321,11 @@ $response = $resolver->resolve($request)->handle($request);
   are resolved with `$container->get(...)`, or a plain `new $entry()` without a container. Each
   middleware entry must resolve to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
   `Psr\Http\Server\RequestHandlerInterface`.
-- **`$registry` is the `Http\Registry` of the routes given to this resolver's `Router`, optional.**
-  Needed whenever a handler, middleware entry or filter was declared as a real instance or closure;
-  it must be `$routes->registry()` of the same, current declaration — never a cached one, since the
-  registry itself is never cached (see [HTTP routes](#http-routes)).
+- **`$routes` is the `Http\Routes` that `$router` was built from, optional.** Needed whenever a
+  handler, middleware entry or filter was declared as a real instance or closure — `HandlerResolver`
+  resolves those from `$routes`'s registry, which must be the same, current declaration `$router`'s
+  routes came from, never a cached one, since the registry itself is never cached (see
+  [HTTP routes](#http-routes)).
 - **The match is a request attribute.** PSR-15 handlers take only the request, so
   `$request->getAttribute(Found::class)` gives the route's own middleware and handler an
   `Http\Found`: its `params` (URL-decoded, by name), `name` and `tags`. Parameters are deliberately
