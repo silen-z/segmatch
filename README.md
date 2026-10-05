@@ -192,7 +192,7 @@ $router = new Router(
 
   ```php
   $routes->get('/reports', new ReportController($reportRepository));
-  $routes->group('/api')->middleware(new Cors($corsConfig))->get(...);
+  $routes->group('/api')->middleware(new RateLimiter($rateLimiterConfig))->get(...);
   ```
 
   `Http\HandlerResolver` needs the same tree's registry to resolve those ids back, so it takes
@@ -214,10 +214,6 @@ $router = new Router(
   Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
   is declared, which is why `Http\Routes` always declares eagerly (see above): the ids baked into a
   cached route's metadata only make sense together with the registry of the same, current declaration.
-  `Http\HandlerResolver::addMiddleware()` (see [Handling requests](#handling-requests)) is still the
-  right place for middleware that must apply even when nothing matches, like CORS on a 404 — that's a
-  different concern from a route's own handler, middleware or filters, and not something `->resolve()`
-  exposes; use `HandlerResolver` directly for it.
 
 ### Filters: methods and your own conditions
 
@@ -342,8 +338,8 @@ $response = $routes->handler($request, $responseFactory, $container)->handle($re
   | Case | Answer | To change it |
   | --- | --- | --- |
   | No route for the path | `Http\NotFoundHandler`: 404 | the constructor's `$notFoundHandler` |
-  | Routes for the path, not the method | `Http\AllowedMethodsHandler`: 405 + `Allow` | middleware (below) |
-  | The same, for an OPTIONS request | `Http\AllowedMethodsHandler`: 200 + `Allow` | middleware (below) |
+  | Routes for the path, not the method | `Http\AllowedMethodsHandler`: 405 + `Allow` | — |
+  | The same, for an OPTIONS request | `Http\AllowedMethodsHandler`: 200 + `Allow` | — |
 
   ```php
   $resolver = new HandlerResolver($router, $responseFactory, $container, notFoundHandler: new MyNotFoundPage($twig));
@@ -364,30 +360,38 @@ $response = $routes->handler($request, $responseFactory, $container)->handle($re
   against the OPTIONS request itself.
 - **Request attributes for custom filters:** PSR-7's own `$request->withAttribute($name, $value)`,
   read back by the filter with `$request->getAttribute($name)`.
-- **Middleware for every request** is added to the resolver, not to the routes:
+- **All middleware is declared on the routes, not on the resolver.** Group middleware
+  (`$r->group('/api')->middleware(...)`) only runs for the routes in that group; there's no
+  app-wide equivalent that also wraps the not-found, method-not-allowed or OPTIONS answers — those
+  three are always exactly what `Http\NotFoundHandler` and `Http\AllowedMethodsHandler` build.
+  Something that must run for every request regardless of whether a route matches, e.g. CORS on a
+  404, wraps `$resolver->resolve($request)->handle($request)` from outside instead (next bullet) —
+  reading the allowed methods back off the **response**'s `Allow` header (built in exactly the
+  format `Access-Control-Allow-Methods` wants), since the `MethodNotAllowed` request attribute only
+  exists inside the resolver's own stack, invisible from outside it:
 
   ```php
-  $resolver->addMiddleware(RequestLog::class, new Cors($config)); // identifiers or instances
-  ```
+  final class Cors implements MiddlewareInterface
+  {
+      public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+      {
+          $response = $handler->handle($request); // $handler ends in $resolver->resolve($request)->handle($request)
+          if (!$request->hasHeader('Origin')) {
+              return $response;
+          }
 
-  It wraps whatever answers — a route, or the not-found, method-not-allowed or OPTIONS handler —
-  outside the route's own middleware, the first added outermost. It runs after matching, so it sees
-  `Found::class` or `MethodNotAllowed::class` (neither for a 404). Group middleware, by contrast,
-  only runs for the routes in the group.
+          $response = $response->withHeader('Access-Control-Allow-Origin', $request->getHeaderLine('Origin'));
+          if ($request->getMethod() === 'OPTIONS' && $response->hasHeader('Allow')) {
+              $response = $response->withHeader('Access-Control-Allow-Methods', $response->getHeaderLine('Allow'));
+          }
 
-  It's also where the OPTIONS answer is changed, e.g. for CORS, which needs middleware anyway to
-  add `Access-Control-Allow-Origin` to actual responses. On a preflight that no route takes, the
-  middleware sees the allowed methods, filters already applied, and decorates the default 200:
-
-  ```php
-  $allowed = $request->getAttribute(MethodNotAllowed::class);
-  if ($request->getMethod() === 'OPTIONS' && $allowed instanceof MethodNotAllowed) {
-      $response = $response->withHeader('Access-Control-Allow-Methods', implode(', ', $allowed->allowed));
+          return $response;
+      }
   }
   ```
-- **Middleware that must run before matching** — anything that changes the request or sets the
-  attributes filters read — goes in a stack around the resolver; its last entry is a one-liner,
-  `return $resolver->resolve($request)->handle($request);`.
+- **Middleware that must run before matching** — anything that changes the request, decorates every
+  response including 404s, or sets the attributes filters read — goes in a stack around the
+  resolver; its last entry is a one-liner, `return $resolver->resolve($request)->handle($request);`.
 
 ### URL generation
 
