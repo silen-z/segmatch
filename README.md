@@ -73,6 +73,10 @@ Caching works like FastRoute's cached dispatcher:
   `.`, `_` and `-` is the file name (`routes-v2` => `routes-v2.php`); other keys are made safe and
   get a short hash (`tenant/a` => `tenant_a~1f3c8a2b.php`). Entries written by an incompatible
   router version are ignored and recompiled.
+- **A table can cache metadata of its own.** Override `RouteTable::metadata()` to return plain data
+  that belongs to the routes as a whole rather than to any one route. It's compiled and cached with
+  them, so like `definitions()` it only runs on a miss; `$router->tableMetadata()` reads it back
+  either way. Matching never returns it.
 
 ### Several routes per path and filters
 

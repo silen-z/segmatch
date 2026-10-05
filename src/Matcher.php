@@ -65,6 +65,8 @@ final readonly class Matcher
     /** @var array<int, non-empty-list<string>> route id => parameter names */
     private array $paramNames;
 
+    private mixed $table;
+
     /**
      * @param CompiledRoutes $compiled output of {@see Compiler::compile()}
      */
@@ -85,6 +87,17 @@ final readonly class Matcher
         $this->routes = $compiled['routes'];
         $this->metadata = $compiled['metadata'];
         $this->paramNames = $compiled['paramNames'];
+        $this->table = $compiled['table'];
+    }
+
+    /**
+     * The metadata of the route table as a whole, as {@see RouteTable::metadata()} gave it when the
+     * routes were compiled — from the cache like everything else, so without declaring the routes
+     * again. Never returned by matching: it belongs to no route.
+     */
+    public function tableMetadata(): mixed
+    {
+        return $this->table;
     }
 
     /**

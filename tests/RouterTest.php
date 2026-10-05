@@ -262,4 +262,73 @@ final class RouterTest extends TestCase
         static::assertSame('first', self::route($laterRouter->match('/a')));
         static::assertSame('second', iterator_to_array($laterRouter->definitions())[0]->metadata);
     }
+
+    public function testTableMetadataIsNullByDefault(): void
+    {
+        $router = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'a')]));
+
+        static::assertNull($router->tableMetadata());
+    }
+
+    public function testTableMetadataComesFromTheCacheWithoutDeclaringAgain(): void
+    {
+        $cache = self::memoryCache();
+        $calls = new ArrayObject();
+        $table = static fn(string $middleware): RouteTable => new class($calls, $middleware) extends RouteTable {
+            /**
+             * @param ArrayObject<int, string> $calls
+             */
+            public function __construct(
+                private readonly ArrayObject $calls,
+                private readonly string $middleware,
+            ) {}
+
+            public function cacheKey(): string
+            {
+                return 'routes';
+            }
+
+            public function definitions(): array
+            {
+                $this->calls->append('definitions');
+
+                return [new RouteDefinition('/a', 'a')];
+            }
+
+            public function metadata(): array
+            {
+                $this->calls->append('metadata');
+
+                return ['middleware' => [$this->middleware]];
+            }
+        };
+
+        static::assertSame(['middleware' => ['first']], new Router($table('first'), $cache)->tableMetadata());
+        // Answered from the cache: neither the routes nor the table metadata are produced again.
+        static::assertSame(['middleware' => ['first']], new Router($table('second'), $cache)->tableMetadata());
+        static::assertSame(['definitions', 'metadata'], $calls->getArrayCopy());
+    }
+
+    public function testTableMetadataIsNeverMatched(): void
+    {
+        $router = new Router(new class extends RouteTable {
+            public function cacheKey(): null
+            {
+                return null;
+            }
+
+            public function definitions(): array
+            {
+                return [];
+            }
+
+            public function metadata(): string
+            {
+                return 'table';
+            }
+        });
+
+        static::assertInstanceOf(NoMatch::class, $router->match('/'));
+        static::assertSame([], $router->matcher()->metadata());
+    }
 }

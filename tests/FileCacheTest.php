@@ -60,7 +60,7 @@ final class FileCacheTest extends TestCase
         ]);
         $routes[] = new RouteDefinition('/api/123', 'numeric segment');
         $routes[] = new RouteDefinition('/assets/{path*}', 'assets');
-        $compiled = Compiler::compile($routes);
+        $compiled = Compiler::compile($routes, ['middleware' => ['cors', Method::Get], 'weight' => 0.5]);
 
         $cache = new FileCache($this->directory);
         $cache->set('routes', $compiled);

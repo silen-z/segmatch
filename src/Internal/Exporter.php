@@ -46,6 +46,9 @@ final class Exporter
             '',
             'return [',
             "    'version' => " . var_export($compiled['version'], return: true) . ',',
+            '',
+            '    // metadata of the route table as a whole, not of any one route',
+            "    'table' => " . self::inline($compiled['table']) . ',',
         ];
 
         foreach (self::TABLES as $name => $description) {

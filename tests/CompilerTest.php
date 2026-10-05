@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Compiler;
 use SilenZ\Segmatch\Exception\InvalidRouteException;
+use SilenZ\Segmatch\Matcher;
 use SilenZ\Segmatch\RouteDefinition;
 use stdClass;
 
@@ -78,6 +79,23 @@ final class CompilerTest extends TestCase
         Compiler::compile($define());
     }
 
+    public function testKeepsTableMetadataApartFromTheRoutes(): void
+    {
+        $compiled = Compiler::compile([new RouteDefinition('/a', 'a')], ['middleware' => ['cors']]);
+
+        static::assertSame(['middleware' => ['cors']], $compiled['table']);
+        static::assertSame(['a'], $compiled['metadata']);
+        static::assertSame(['middleware' => ['cors']], new Matcher($compiled)->tableMetadata());
+    }
+
+    public function testRejectsTableMetadataThatCannotBeCached(): void
+    {
+        $this->expectException(InvalidRouteException::class);
+        $this->expectExceptionMessageMatches('/^Metadata of the route table contains a value of type stdClass/');
+
+        Compiler::compile([], ['middleware' => [new stdClass()]]);
+    }
+
     public function testCompilesToFlatNodeTable(): void
     {
         $routes = [
@@ -92,7 +110,8 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 9,
+                'version' => 10,
+                'table' => null,
                 // Parameterless routes are looked up by full path. A single route is stored as its
                 // id; routes sharing a path as a list in declaration order.
                 'static' => [
@@ -126,7 +145,8 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 9,
+                'version' => 10,
+                'table' => null,
                 'static' => [],
                 // Node 1 ("items") has both a {id} param edge and a catch-all, so a miss past its
                 // static "archive" edge (to node 2) must still try them: the child id is stored as

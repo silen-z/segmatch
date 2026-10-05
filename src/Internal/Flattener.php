@@ -26,10 +26,11 @@ final class Flattener
 {
     /**
      * @param list<RouteDefinition> $routes
+     * @param mixed $tableMetadata see {@see Compiler::compile()}
      *
      * @return CompiledRoutes
      */
-    public static function flatten(BuildNode $root, array $routes): array
+    public static function flatten(BuildNode $root, array $routes, mixed $tableMetadata): array
     {
         // Must run before node ids are assigned: it prunes the tree.
         $static = [];
@@ -39,6 +40,7 @@ final class Flattener
 
         $compiled = [
             'version' => Layout::FORMAT_VERSION,
+            'table' => $tableMetadata,
             'static' => $static,
             'edges' => [],
             'param' => [],

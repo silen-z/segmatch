@@ -35,4 +35,16 @@ abstract class RouteTable
      * @return iterable<int, RouteDefinition>
      */
     abstract public function definitions(): iterable;
+
+    /**
+     * Metadata of these routes as a whole rather than of any one route, e.g. what applies to every
+     * request whether a route matches or not. Plain data like a route's own metadata, and cached with
+     * the routes: like {@see definitions()}, it's only called when the cache has no entry, and read
+     * back with {@see Matcher::tableMetadata()} (or {@see Router::tableMetadata()}) otherwise. `null`
+     * by default.
+     */
+    public function metadata(): mixed
+    {
+        return null;
+    }
 }

@@ -60,6 +60,14 @@ final class Router
     }
 
     /**
+     * {@see RouteTable::metadata()}, loaded from the cache or compiled on first use like the routes.
+     */
+    public function tableMetadata(): mixed
+    {
+        return $this->matcher()->tableMetadata();
+    }
+
+    /**
      * The matcher for the routes, loaded from the cache or compiled on first use.
      */
     public function matcher(): Matcher
@@ -74,7 +82,7 @@ final class Router
     {
         $key = $this->routes->cacheKey();
         if ($this->cache === null || $key === null) {
-            return Compiler::compile($this->routes->definitions());
+            return Compiler::compile($this->routes->definitions(), $this->routes->metadata());
         }
 
         $cached = $this->cache->get($key);
@@ -83,7 +91,7 @@ final class Router
             return $cached;
         }
 
-        $compiled = Compiler::compile($this->routes->definitions());
+        $compiled = Compiler::compile($this->routes->definitions(), $this->routes->metadata());
         $this->cache->set($key, $compiled);
 
         return $compiled;

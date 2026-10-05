@@ -26,6 +26,7 @@ use function sprintf;
  *     declaration order
  * @psalm-type CompiledRoutes = array{
  *     version: int,
+ *     table: mixed,
  *     static: array<array-key, RouteIds>,
  *     edges: array<int, array<array-key, int>>,
  *     param: array<int, int>,
@@ -40,12 +41,15 @@ final class Compiler
     /**
      * @param iterable<mixed, mixed> $definitions {@see RouteDefinition}s in declaration order, which
      *     decides between routes sharing a path; anything else is rejected
+     * @param mixed $tableMetadata metadata of the route table as a whole rather than of any one route
+     *     ({@see RouteTable::metadata()}), kept as-is for {@see Matcher::tableMetadata()}; plain data,
+     *     like a route's own
      *
      * @return CompiledRoutes
      *
      * @throws InvalidRouteException
      */
-    public static function compile(iterable $definitions): array
+    public static function compile(iterable $definitions, mixed $tableMetadata = null): array
     {
         $routes = [];
         // @mago-expect analysis:mixed-assignment
@@ -62,7 +66,9 @@ final class Compiler
             $routes[] = $route;
         }
 
-        return Flattener::flatten(TreeBuilder::build($routes), $routes);
+        self::assertExportable($tableMetadata, 'the route table');
+
+        return Flattener::flatten(TreeBuilder::build($routes), $routes, $tableMetadata);
     }
 
     /**
