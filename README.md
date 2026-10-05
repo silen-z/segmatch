@@ -220,9 +220,11 @@ $router = new Router(
   ```
 
   Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
-  is declared, which is why `Http\Routes` always declares eagerly (see above): the ids baked into a
-  cached route's metadata only make sense together with the registry of the same, current declaration.
-  A warm request therefore declares its routes as usual and still resolves every instance correctly.
+  is declared, which is why instances need routes declared eagerly, on every request (see above): the
+  ids baked into a cached route's metadata only make sense together with the registry of the same,
+  current declaration. A warm request therefore declares its routes as usual and still resolves every
+  instance correctly. Routes declared lazily, only on a cache miss, can't have instances at all —
+  see `lazyRoutes()` in [Handling requests](#handling-requests).
 
 ### Filters: methods and your own conditions
 
@@ -327,15 +329,34 @@ $response = $builder->handler($request)->handle($request);
   autowires constructor arguments needs no registration of its own. Each middleware entry must resolve
   to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
   `Psr\Http\Server\RequestHandlerInterface`.
-- **`routes()` gives the tree to declare on,** the same one every call, so the `Registry` behind it
-  can't get out of step with the routes. Declare everything before the first request: the compiled
-  table is built once, on first use.
+- **`routes()` gives the tree to declare on eagerly,** the same one every call, so the `Registry`
+  behind it can't get out of step with the routes. Declare everything before the first request: the
+  compiled table is built once, on first use.
+- **`lazyRoutes($define)` declares lazily instead,** for when declaring on every request costs too
+  much. `$define` gets a fresh tree and only runs when the route cache has no entry, so a request
+  answered from the cache declares nothing at all:
+  ```php
+  $builder->lazyRoutes(static function (Routes $routes): void {
+      $routes->middleware(CorsMiddleware::class);
+      $routes->get('/', HomeController::class);
+      $routes->group('/api')->middleware('api')->get('/users/{id}', [UserController::class, 'show']);
+  });
+  $builder->router(new FileCache(__DIR__ . '/var/cache'), 'routes-' . APP_VERSION);
+  ```
+  The price: every handler, middleware entry and filter must be a class name or container identifier.
+  An instance or closure would only exist on the request that built the cache, so declaring one
+  throws an `InvalidRouteException`. Root middleware still wraps every outcome, since it's cached
+  with the routes as the table's metadata (see [Caching](#caching)).
+- **Pick one, once.** A builder takes either `routes()` or a single `lazyRoutes()`, before its router
+  is built; anything else throws a `LogicException`, and so does answering a request with no routes
+  declared at all.
 - **`router()` is the `Router` for those routes,** built once and reused by `handler()`. You rarely
   call it, except to opt into caching — pass a `Cache\RouteCache` and a cache key, once, at bootstrap:
   ```php
   $builder->router(new FileCache(__DIR__ . '/var/cache'), 'routes-' . APP_VERSION);
   ```
-  Without both, the routes are compiled on every request. See [Caching](#caching).
+  Without both, the routes are compiled on every request. See [Caching](#caching). Lazy routes
+  without a cache are declared once per builder, on first use.
 - **The match is a request attribute.** PSR-15 handlers take only the request, so
   `$request->getAttribute(Found::class)` gives the route's own middleware and handler an
   `Http\Found`: its `params` (URL-decoded, by name), `name` and `tags`. Parameters are deliberately
