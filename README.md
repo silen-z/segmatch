@@ -473,24 +473,39 @@ foreach ($router->definitions() as $definition) {
 }
 ```
 
-`OpenApi\PathsGenerator` builds the `paths` object of an OpenAPI document from exactly that:
+`OpenApi\PathsGenerator` builds the `PathItem`s of an OpenAPI document from exactly that, as
+[zircote/swagger-php](https://github.com/zircote/swagger-php) `OpenApi\Attributes` objects — the same
+types that package's own attributes use, just built by hand instead of scanned from docblocks:
 
 ```php
+use OpenApi\Attributes as OA;
 use SilenZ\Segmatch\OpenApi\PathsGenerator;
 
-$paths = PathsGenerator::generate($router->definitions());
-$document = ['openapi' => '3.1.0', 'info' => [...], ...$paths];
+$document = new OA\OpenApi(
+    openapi: '3.1.0',
+    info: new OA\Info(title: 'Example API', version: '1.0.0'),
+    paths: PathsGenerator::generate($router->definitions()),
+);
+
+$document->toJson(); // or ->toYaml(), ->saveAs(...), ->validate()
 ```
+
+A full runnable version is in [`examples/openapi.php`](examples/openapi.php) — run it with
+`php examples/openapi.php`.
 
 - **It covers only what segmatch knows:** paths, methods, path parameters, names (as
   `operationId`) and tags. Request/response bodies, security schemes, `info` and `servers` aren't
-  its business — merge them into the document yourself, keyed off `operationId` or route name.
+  its business — merge them into the document yourself, using the same `OA\*` types, keyed off
+  `operationId` or route name.
 - **Every operation gets a placeholder `200` response**, since `responses` is a required field of an
   OpenAPI operation and segmatch has no notion of what a route responds with. Replace it yourself.
 - **Catch-alls become a single `{name}` path parameter.** OpenAPI has no "rest of the path"
   placeholder, so a `{name*}`/`{name+}`'s actual multi-segment behavior isn't represented.
 - **`any()` routes list every HTTP method OpenAPI supports**, since no methods were declared to
   narrow it down.
+- **No scanner involved.** `OA\*` objects are self-contained — `PathsGenerator` builds them directly
+  and `OA\OpenApi` serializes itself with `->toJson()`/`->toYaml()`/`->validate()`; nothing scans
+  attributes off real classes. zircote/swagger-php's own attribute-scanning generator isn't used here.
 
 ## Architecture
 
