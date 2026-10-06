@@ -10,6 +10,7 @@ use SilenZ\Segmatch\Internal\SegmentType;
 
 use function array_key_last;
 use function explode;
+use function implode;
 use function preg_match;
 use function sprintf;
 use function str_contains;
@@ -38,6 +39,19 @@ final readonly class RouteDefinition
     public array $segments;
 
     /**
+     * The path rendered as a template: static text as-is, every parameter — catch-alls included —
+     * as `{name}`, with no `*`/`+` suffix. OpenAPI's path templates use this exact style.
+     */
+    public string $pathTemplate;
+
+    /**
+     * The path's named parameters, in path order.
+     *
+     * @var list<PathParameter>
+     */
+    public array $parameters;
+
+    /**
      * @param string $path full route path starting with "/", e.g. "/users/{id}" or "/assets/{path+}"
      *
      * @throws InvalidRouteException when the path is malformed
@@ -47,6 +61,8 @@ final readonly class RouteDefinition
         public mixed $metadata = null,
     ) {
         $this->segments = self::parse($path);
+        $this->pathTemplate = self::template($this->segments);
+        $this->parameters = self::parameters($this->segments);
     }
 
     /**
@@ -122,5 +138,37 @@ final readonly class RouteDefinition
         // explode() always yields at least one part, so at least one segment was added.
         /** @var non-empty-list<Segment> $segments */
         return $segments;
+    }
+
+    /**
+     * @param non-empty-list<Segment> $segments
+     */
+    private static function template(array $segments): string
+    {
+        $parts = [];
+        foreach ($segments as $segment) {
+            $parts[] = $segment->type === SegmentType::Static ? $segment->value : '{' . $segment->value . '}';
+        }
+
+        return '/' . implode('/', $parts);
+    }
+
+    /**
+     * @param non-empty-list<Segment> $segments
+     *
+     * @return list<PathParameter>
+     */
+    private static function parameters(array $segments): array
+    {
+        $parameters = [];
+        foreach ($segments as $segment) {
+            if ($segment->type === SegmentType::Static) {
+                continue;
+            }
+
+            $parameters[] = new PathParameter($segment->value, required: $segment->type !== SegmentType::CatchAllZero);
+        }
+
+        return $parameters;
     }
 }
