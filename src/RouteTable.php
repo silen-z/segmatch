@@ -9,8 +9,8 @@ use Closure;
 use function is_callable;
 
 /**
- * Where {@see Router} gets its routes from: a cache key, the route definitions behind it and the
- * table's own metadata, as one unit.
+ * Where {@see Router} gets its routes from: a cache key, the route definitions behind it, the
+ * table's own metadata and an {@see InstanceRegistry}, as one unit.
  *
  *     new RouteTable(static fn(): array => [new RouteDefinition('/', 'home')], 'routes-' . APP_VERSION);
  *
@@ -18,7 +18,8 @@ use function is_callable;
  * for {@see cacheKey()}: given as a callable, they're only declared then, on every call to
  * {@see definitions()}. The key lives on the same object, instead of being passed to `Router` as a
  * separate argument, so the two can't drift apart the way two independent values could: whatever
- * decides the key is right there next to whatever decides the definitions.
+ * decides the key is right there next to whatever decides the definitions — the same reason
+ * {@see registry()} lives here too, rather than traveling separately alongside a `Router`.
  *
  * Nothing is invalidated automatically, so anything that changes which routes get compiled (a deploy,
  * configuration deciding which routes exist) must change the cache key, e.g. by including an
@@ -44,11 +45,17 @@ final readonly class RouteTable
      *     cache miss. Only a `Closure` counts as lazy here, not any callable: plain metadata like
      *     `'trim'` or `['Foo', 'bar']` would pass for one. Read back with
      *     {@see Matcher::tableMetadata()} or {@see Router::tableMetadata()}
+     * @param InstanceRegistry $registry opaque to the core router, which never reads it — a plain
+     *     value like `$cacheKey`, not behind the lazy `$metadata`, since it can hold live
+     *     instances/closures that could never survive the compiled cache. Exists so a declaration
+     *     layer such as `Http\Routes` can keep it paired with the table it was built for instead of
+     *     passing it around separately; see {@see Http\HandlerBuilder}
      */
     public function __construct(
         callable|iterable $definitions,
         private ?string $cacheKey = null,
         private mixed $metadata = null,
+        private InstanceRegistry $registry = new InstanceRegistry(),
     ) {
         // A list of RouteDefinitions is never callable, so a callable is always the lazy form.
         $this->definitions = is_callable($definitions) ? $definitions(...) : $definitions;
@@ -57,6 +64,11 @@ final readonly class RouteTable
     public function cacheKey(): ?string
     {
         return $this->cacheKey;
+    }
+
+    public function registry(): InstanceRegistry
+    {
+        return $this->registry;
     }
 
     /**

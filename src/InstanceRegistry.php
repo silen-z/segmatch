@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SilenZ\Segmatch\Http;
+namespace SilenZ\Segmatch;
 
 use SilenZ\Segmatch\Exception\InvalidRouteException;
 use UnitEnum;
@@ -18,13 +18,14 @@ use function sprintf;
  * name: a route's own metadata must stay plain data to survive the route cache, so anything that
  * isn't already is wrapped by {@see wrap()} into an id {@see get()} resolves it back from.
  *
- * One `Registry` is shared by a {@see Routes} tree — the root and every nested `group()` — and
- * rebuilt fresh every time the tree is declared; see {@see Routes::registry()} for what that means
- * for pairing it with a `Router`. {@see LazyRoutes} uses none at all: nothing it declares is ever
- * wrapped, since an instance given while declaring would no longer exist on the requests answered
- * from a cache hit — {@see LazyRoute} rejects one outright instead.
+ * Carried by {@see RouteTable} (`registry()`, alongside `cacheKey()`) and so by {@see Router}, which
+ * never reads it itself — it only exists so a declaration layer can keep it paired with the table it
+ * built, e.g. one `Http\Routes` tree's own, shared by its root and every nested `group()`, rebuilt
+ * fresh every time the tree is declared. {@see Http\LazyRoutes} uses none at all: nothing it declares
+ * is ever wrapped, since an instance given while declaring would no longer exist on the requests
+ * answered from a cache hit — {@see Http\LazyRoute} rejects one outright instead.
  */
-final class Registry
+final class InstanceRegistry
 {
     /** @var list<mixed> */
     private array $values = [];
@@ -62,7 +63,7 @@ final class Registry
     }
 
     /**
-     * @internal shared with {@see Resolver}
+     * @internal shared with {@see Http\Resolver}
      */
     public function get(int $id): mixed
     {

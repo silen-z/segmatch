@@ -45,6 +45,10 @@ if ($result instanceof RouteMatch) {
   sources) goes in as the callable producing it, since it can only be iterated once. A
   `RouteDefinition` parses its path when it's created, so a malformed path throws where it's
   declared. `Http\Routes` gives you one too (`$routes->table(...)`, see [HTTP routes](#http-routes)).
+- A `RouteTable` also carries an `InstanceRegistry` (`registry()`, defaulting to an empty one),
+  read back the same way from `Router::registry()`. The core router never reads it — it's opaque
+  cargo, there purely so a declaration layer like `Http\Routes` can keep it paired with the table
+  it was built for; see [HTTP routes](#http-routes).
 - `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
   Parameter values are `rawurldecode`d.
 - `Router` is a thin entry point over the lower-level pieces.
@@ -176,8 +180,9 @@ $router = new Router(
 
 - **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
   route for one method; `map()` for several; `any()` for every method.
-- **The tree carries its own `Http\Registry`,** the store that keeps real instances out of the route
-  cache (see below) — `new Routes()` creates one for you, shared by the root and every group.
+- **The tree carries its own `InstanceRegistry`,** the store that keeps real instances out of the
+  route cache (see below) — `new Routes()` creates one for you, shared by the root and every group,
+  and carried automatically into `table()`'s result.
 - **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
   `->tag()` and `->filter()`.
 - **Groups:** `group()` takes an optional prefix and returns a nested `Routes`; `->middleware()`,
@@ -198,8 +203,8 @@ $router = new Router(
   (see [Caching](#caching)).
 - **A handler, middleware entry or filter may be a real instance or closure,** not just a class name:
   anything that isn't already cacheable plain data (scalars, null, enums, arrays of those) is
-  transparently wrapped into the tree's `Http\Registry` instead, so routes can still be cached without
-  giving up configured instances:
+  transparently wrapped into the tree's `InstanceRegistry` instead, so routes can still be cached
+  without giving up configured instances:
 
   ```php
   $routes->get('/reports', new ReportController($reportRepository));
@@ -208,8 +213,9 @@ $router = new Router(
 
   Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
   is declared, so an instance can only ever be looked up in the registry of that same declaration,
-  never a different one's: pass [`RoutesHandlerBuilder`](#handling-requests) the `Router` and the
-  `Registry` of the same `Routes`, together (`$routes->registry()`).
+  never a different one's. That's never something you have to get right by hand: it travels with
+  `table()`'s `RouteTable`, so a `Router` built from it always carries the matching registry — see
+  [Handling requests](#handling-requests).
 - **`Http\LazyRoutes` declares lazily instead,** for when declaring on every request costs too much.
   `$define` gets a fresh tree and only runs when the route cache has no entry, so a request answered
   from the cache declares nothing at all:
@@ -229,8 +235,8 @@ $router = new Router(
   The price: every handler, middleware entry and filter must be a class name or container identifier
   — an instance or closure would only exist on the request that built the cache, so `$define` throws
   an `InvalidRouteException` the moment it declares one. In exchange, nothing it declares is ever
-  wrapped, so an all-lazy router needs no `Registry` of its own: pass `RoutesHandlerBuilder` a fresh
-  `new Registry()` instead of `$routes->registry()`.
+  wrapped, so an all-lazy router carries an empty `InstanceRegistry` — `RouteTable`'s own default,
+  nothing `LazyRoutes` has to set up.
 
 ### Filters: methods and your own conditions
 
@@ -241,7 +247,7 @@ There's deliberately no built-in parameter validation such as regex constraints:
 values in the controller. If a route really must be skipped for some values, so that another
 route can take the request, write a filter for it.
 
-`Http\RoutesHandlerBuilder` (see [Handling requests](#handling-requests)) is how you match: it checks
+`Http\HandlerBuilder` (see [Handling requests](#handling-requests)) is how you match: it checks
 the route's methods with `Http\MethodNotAllowed` — generic, container-free — and resolves and runs
 its filters, the only place that knows about the container.
 
@@ -287,9 +293,9 @@ Each route's metadata, as returned in `RouteMatch::$route`:
 ```
 
 `handler`, each `middleware` entry and each `filters` entry is a class name, container identifier, or
-`Http\Registry` id standing in for a real instance or closure given instead. Those ids are integers,
-so a handler, middleware entry or filter can never be an integer of its own: declaring one throws an
-`InvalidRouteException`.
+an `InstanceRegistry` id standing in for a real instance or closure given instead. Those ids are
+integers, so a handler, middleware entry or filter can never be an integer of its own: declaring one
+throws an `InvalidRouteException`.
 
 Tags let cross-cutting code act on routes without splitting them into more groups. For example, one
 auth middleware for the whole site that lets public routes through:
@@ -299,7 +305,7 @@ $public = $r->group()->middleware(AuthMiddleware::class);
 $public->get('/login', LoginForm::class)->tag('public');
 $public->get('/account', ShowAccount::class);
 
-// in AuthMiddleware::process(), which Http\RoutesHandlerBuilder runs inside each route's stack:
+// in AuthMiddleware::process(), which Http\HandlerBuilder runs inside each route's stack:
 $found = $request->getAttribute(Found::class);
 if (!in_array('public', $found->tags, true) && !$session->isLoggedIn()) {
     return new Response(401);
@@ -308,18 +314,18 @@ if (!in_array('public', $found->tags, true) && !$session->isLoggedIn()) {
 
 `Found` is only on the request inside the route's stack (see
 [Handling requests](#handling-requests)), so this works as route or group middleware, not as
-middleware that runs before `RoutesHandlerBuilder`.
+middleware that runs before `HandlerBuilder`.
 
 ### Handling requests
 
-`Http\RoutesHandlerBuilder` answers requests from an already-built `Router`. `build()` returns the
+`Http\HandlerBuilder` answers requests from an already-built `Router`. `build()` returns the
 PSR-15 handler for one request — the matched route's middleware and handler as one stack built with
 [Relay](https://relayphp.com/), or a 404/405 handler — so you don't handle `RouteMatch`, `NoMatch`,
 methods and filters yourself:
 
 ```php
+use SilenZ\Segmatch\Http\HandlerBuilder;
 use SilenZ\Segmatch\Http\Routes;
-use SilenZ\Segmatch\Http\RoutesHandlerBuilder;
 use SilenZ\Segmatch\Router;
 
 $routes = new Routes();
@@ -328,7 +334,7 @@ $routes->group('/api')->middleware('api')->get('/users/{id}', [UserController::c
 
 // $container resolves filters, middleware, handlers and the builder's own fallback handlers
 $router = new Router($routes->table());
-$builder = new RoutesHandlerBuilder($container, $routes->registry(), $router);
+$builder = new HandlerBuilder($container, $router);
 
 $response = $builder->build($request)->handle($request);
 ```
@@ -341,12 +347,11 @@ $response = $builder->build($request)->handle($request);
   factory for `Http\HeadMiddleware`; a container that autowires constructor arguments needs no
   registration of its own. Each middleware entry must resolve to a
   `Psr\Http\Server\MiddlewareInterface`, and the handler to a `Psr\Http\Server\RequestHandlerInterface`.
-- **`$registry` must be the one the same declaration built `$router` with** — `$routes->registry()`
-  above, never a different `Routes`' one (see [HTTP routes](#http-routes)); a fresh `new Registry()`
-  for a router built from `Http\LazyRoutes` instead.
 - **`$router` is already built** — bring your own, shared across requests the way
-  `Router::matcher()` caches its own compiled routes (see [Caching](#caching)); `RoutesHandlerBuilder`
-  doesn't build or memoize one itself.
+  `Router::matcher()` caches its own compiled routes (see [Caching](#caching)); `HandlerBuilder`
+  doesn't build or memoize one itself. A handler, middleware entry or filter declared as a real
+  instance or closure is looked up in `$router->registry()` — see [HTTP routes](#http-routes) — so
+  there's no separate registry argument here to keep in sync with `$router`.
 - **A handler may also be `[target, 'method']`,** e.g. `[UserController::class, 'show']`: the target
   is a class name or container identifier, resolved from the container, or an instance (`Routes` only).
   It's only resolved once the request gets past the route's middleware, and `$target->show($request)`

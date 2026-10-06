@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace SilenZ\Segmatch\Tests\Http;
+namespace SilenZ\Segmatch\Tests;
 
 use PHPUnit\Framework\TestCase;
 use SilenZ\Segmatch\Exception\InvalidRouteException;
-use SilenZ\Segmatch\Http\Registry;
+use SilenZ\Segmatch\InstanceRegistry;
 use SilenZ\Segmatch\Tests\Fixtures\Method;
 use stdClass;
 
-final class RegistryTest extends TestCase
+final class InstanceRegistryTest extends TestCase
 {
     public function testPlainValuesPassThroughUnchanged(): void
     {
-        $registry = new Registry();
+        $registry = new InstanceRegistry();
 
         static::assertSame('show', $registry->wrap('show', 'test'));
         static::assertSame(4.2, $registry->wrap(4.2, 'test'));
@@ -28,12 +28,12 @@ final class RegistryTest extends TestCase
         $this->expectException(InvalidRouteException::class);
         $this->expectExceptionMessageMatches('/^Route "\/a" handler cannot be an integer \(42\)/');
 
-        new Registry()->wrap(42, 'Route "/a" handler');
+        new InstanceRegistry()->wrap(42, 'Route "/a" handler');
     }
 
     public function testNonPlainValuesAreWrappedIntoAnId(): void
     {
-        $registry = new Registry();
+        $registry = new InstanceRegistry();
         $object = new stdClass();
 
         /** @var int $id */
@@ -45,7 +45,7 @@ final class RegistryTest extends TestCase
 
     public function testAnArrayContainingAnyNonPlainValueIsWrappedWhole(): void
     {
-        $registry = new Registry();
+        $registry = new InstanceRegistry();
         $mixed = [new stdClass(), 'show'];
 
         /** @var int $id */
@@ -57,7 +57,7 @@ final class RegistryTest extends TestCase
 
     public function testIdsAreAssignedInWrappingOrder(): void
     {
-        $registry = new Registry();
+        $registry = new InstanceRegistry();
         $first = new stdClass();
         $second = new stdClass();
 
@@ -73,7 +73,7 @@ final class RegistryTest extends TestCase
 
     public function testClosuresAreWrapped(): void
     {
-        $registry = new Registry();
+        $registry = new InstanceRegistry();
         $closure = static fn(): string => 'x';
 
         /** @var int $id */

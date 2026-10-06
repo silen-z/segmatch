@@ -57,6 +57,15 @@ final class Router
     }
 
     /**
+     * {@see RouteTable::registry()} — never lazy, so unlike {@see tableMetadata()} this needs no
+     * compiling or cache lookup.
+     */
+    public function registry(): InstanceRegistry
+    {
+        return $this->routes->registry();
+    }
+
+    /**
      * The matcher for the routes, loaded from the cache or compiled on first use.
      */
     public function matcher(): Matcher
