@@ -506,18 +506,19 @@ $document = ['openapi' => '3.1.0', 'info' => [...], ...$paths];
 ## Architecture
 
 ```
-RouteDefinitions ──► TreeBuilder ──► Flattener ──► RouteCache ──► Matcher
- paths + metadata    tree + checks   tables        e.g. FileCache  static hash lookup, then tree loop + backtracking
+RouteDefinitions ──► Compiler ──────► Flattener ──► RouteCache ──► Matcher
+ paths + metadata    tree + checks,   tables        e.g. FileCache  static hash lookup, then tree loop + backtracking
+                     static table
 
 Router wires these together: on a cache miss it declares, compiles and stores the routes.
 ```
 
 - **Routes without parameters** are answered from a static table keyed by the full path, a single
   hash lookup.
-- **Everything else** goes through the tree. Each compiled node is a list `[static map, param
-  child, catch-all routes, catch-all min, routes]`, with route-ID lists in declaration order and
-  `-1` for "no param child". The field positions
-  are named in `Internal\Layout`.
+- **Everything else** goes through the tree, flattened into sparse tables keyed by node id: static
+  edges, `{param}` edges, catch-alls and the routes ending at each node, with route ids in
+  declaration order. A node only appears in the tables it has something in, so the cache file stays
+  close to the size of what actually exists. The full layout is documented on `Compiler`.
 - **A route's metadata and parameter names** live in a separate route table, so the traversal
   loop only deals with integers and segment strings.
 

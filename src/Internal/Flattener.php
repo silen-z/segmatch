@@ -11,7 +11,7 @@ use function count;
 use function spl_object_id;
 
 /**
- * Turns the intermediate tree into the flat runtime tables described by {@see Layout}.
+ * Turns the intermediate tree into the flat runtime tables described by {@see Compiler}.
  *
  * Every table is a sparse map keyed by node or route id, so things a node or route doesn't have
  * cost nothing in the cache file. That keeps the number of arrays, which dominates the cost of
@@ -25,23 +25,19 @@ use function spl_object_id;
 final class Flattener
 {
     /**
+     * @param BuildNode $root the tree, with the routes without parameters already moved out into $static
      * @param list<RouteDefinition> $routes
+     * @param array<array-key, non-empty-list<int>> $static full path => route ids, in declaration order
      * @param mixed $tableMetadata the table's own metadata, {@see \SilenZ\Segmatch\RouteTable::metadata()}
      *
      * @return CompiledRoutes
      */
-    public static function flatten(BuildNode $root, array $routes, mixed $tableMetadata): array
+    public static function flatten(BuildNode $root, array $routes, array $static, mixed $tableMetadata): array
     {
-        // Must run before node ids are assigned: it prunes the tree.
-        $static = [];
-        foreach (StaticTable::extract($root, $routes) as $path => $ids) {
-            $static[$path] = self::ids($ids);
-        }
-
         $compiled = [
-            'version' => Layout::FORMAT_VERSION,
+            'version' => Compiler::FORMAT_VERSION,
             'table' => $tableMetadata,
-            'static' => $static,
+            'static' => [],
             'edges' => [],
             'param' => [],
             'catch' => [],
@@ -50,6 +46,10 @@ final class Flattener
             'paramNames' => [],
         ];
 
+        foreach ($static as $path => $routeIds) {
+            $compiled['static'][$path] = self::ids($routeIds);
+        }
+
         [$nodes, $ids] = self::number($root);
         foreach ($nodes as $id => $node) {
             $hasParam = $node->param !== null;
@@ -57,7 +57,7 @@ final class Flattener
 
             // A static match on this node may still need to fall back to its {param} or catch-all
             // edge, so the matcher must push a backtrack frame. Flagging that in the sign of the
-            // child id itself (see Layout) spares it a lookup into a separate table for every segment.
+            // child id itself (see Compiler) spares it a lookup into a separate table for every segment.
             $edges = [];
             foreach ($node->static as $segment => $child) {
                 $childId = $ids[spl_object_id($child)];
@@ -146,7 +146,7 @@ final class Flattener
     /**
      * Flags a child node id as "needs a backtrack frame" by storing it negative. Child ids are
      * always >= 1 (node 0 is the root and never a child), so `-id - 1` is always <= -2 and never
-     * collides with {@see Layout::NONE} (-1).
+     * collides with -1, which the matcher reads as "none".
      */
     private static function encode(int $childId): int
     {

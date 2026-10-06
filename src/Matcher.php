@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace SilenZ\Segmatch;
 
 use InvalidArgumentException;
-use SilenZ\Segmatch\Internal\Layout;
 
 use function array_slice;
 use function count;
@@ -34,6 +33,10 @@ final readonly class Matcher
     private const int PARAM = 2;
     private const int CATCH = 3;
     private const int EXHAUSTED = 4;
+
+    // A table lookup that found nothing: `?? self::NONE` keeps misses as cheap int compares. Never a
+    // valid node, route id or encoded child id (see Compiler).
+    private const int NONE = -1;
 
     /** @var array<array-key, RouteIds> full path => route id(s), for routes without parameters */
     private array $static;
@@ -72,11 +75,11 @@ final readonly class Matcher
      */
     public function __construct(array $compiled)
     {
-        if ($compiled['version'] !== Layout::FORMAT_VERSION) {
+        if ($compiled['version'] !== Compiler::FORMAT_VERSION) {
             throw new InvalidArgumentException(sprintf(
                 'Compiled routes have format version %d, expected %d; recompile them.',
                 $compiled['version'],
-                Layout::FORMAT_VERSION,
+                Compiler::FORMAT_VERSION,
             ));
         }
 
@@ -134,8 +137,8 @@ final readonly class Matcher
         $rejected = [];
 
         // Routes without parameters are answered by a single hash lookup.
-        $static = $this->static[$path] ?? Layout::NONE;
-        if ($static !== Layout::NONE) {
+        $static = $this->static[$path] ?? self::NONE;
+        if ($static !== self::NONE) {
             if ($filter === null) {
                 return new RouteMatch($this->metadata[is_int($static) ? $static : $static[0]], []);
             }
@@ -183,8 +186,8 @@ final readonly class Matcher
             if ($stage === self::ENTER) {
                 $stage = self::STATIC;
                 if ($index === $count) {
-                    $routes = $ends[$node] ?? Layout::NONE;
-                    if ($routes !== Layout::NONE) {
+                    $routes = $ends[$node] ?? self::NONE;
+                    if ($routes !== self::NONE) {
                         $match = $filter === null
                             ? $this->result(is_int($routes) ? $routes : $routes[0], $values)
                             : $this->select(is_int($routes) ? [$routes] : $routes, $values, $filter, $rejected);
@@ -193,8 +196,8 @@ final readonly class Matcher
                         }
                     }
 
-                    $catch = $catches[$node] ?? Layout::NONE;
-                    if ($catch !== Layout::NONE && !$catch[0]) {
+                    $catch = $catches[$node] ?? self::NONE;
+                    if ($catch !== self::NONE && !$catch[0]) {
                         $values[$paramCount] = '';
                         $match = $filter === null
                             ? $this->result($catch[1], $values)
@@ -209,8 +212,8 @@ final readonly class Matcher
             }
 
             if ($stage === self::STATIC) {
-                $child = $edges[$node][$segments[$index]] ?? Layout::NONE;
-                if ($child !== Layout::NONE) {
+                $child = $edges[$node][$segments[$index]] ?? self::NONE;
+                if ($child !== self::NONE) {
                     if ($child < 0) {
                         $child = -$child - 1;
                         $stackNode[$stackSize] = $node;
@@ -230,9 +233,9 @@ final readonly class Matcher
             }
 
             if ($stage === self::PARAM) {
-                $param = $paramEdges[$node] ?? Layout::NONE;
+                $param = $paramEdges[$node] ?? self::NONE;
                 $segment = $segments[$index];
-                if ($param !== Layout::NONE && $segment !== '') {
+                if ($param !== self::NONE && $segment !== '') {
                     if ($param < 0) {
                         $param = -$param - 1;
                         $stackNode[$stackSize] = $node;
@@ -253,8 +256,8 @@ final readonly class Matcher
             }
 
             if ($stage === self::CATCH) {
-                $catch = $catches[$node] ?? Layout::NONE;
-                if ($catch !== Layout::NONE) {
+                $catch = $catches[$node] ?? self::NONE;
+                if ($catch !== self::NONE) {
                     $rest = implode('/', array_slice($segments, $index));
                     if ($rest !== '' || !$catch[0]) {
                         $values[$paramCount] = $rest;

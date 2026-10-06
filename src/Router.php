@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace SilenZ\Segmatch;
 
 use SilenZ\Segmatch\Cache\RouteCache;
-use SilenZ\Segmatch\Internal\Layout;
 
 /**
  * Entry point: declares the routes lazily, caches them and matches paths.
@@ -76,7 +75,7 @@ final class Router
         }
 
         $cached = $this->cache->get($key);
-        if ($cached !== null && ($cached['version'] ?? null) === Layout::FORMAT_VERSION) {
+        if ($cached !== null && ($cached['version'] ?? null) === Compiler::FORMAT_VERSION) {
             /** @var CompiledRoutes $cached */
             return $cached;
         }
