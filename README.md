@@ -177,10 +177,7 @@ $router = new Router(
 - **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
   route for one method; `map()` for several; `any()` for every method.
 - **The tree carries its own `Http\Registry`,** the store that keeps real instances out of the route
-  cache (see below) — `new Routes()` creates one for you. One `Registry` is shared by the root and
-  every group, so it has to be the same one throughout a tree; `$routes->registry()` gives it back, to
-  pass to [`RoutesHandlerBuilder`](#handling-requests) alongside the `Router` built from this same
-  tree's `table()`.
+  cache (see below) — `new Routes()` creates one for you, shared by the root and every group.
 - **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
   `->tag()` and `->filter()`.
 - **Groups:** `group()` takes an optional prefix and returns a nested `Routes`; `->middleware()`,
@@ -209,25 +206,31 @@ $router = new Router(
   $routes->group('/api')->middleware(new RateLimiter($rateLimiterConfig))->get(...);
   ```
 
-  A handler, middleware entry or filter declared as a real instance can only ever be looked up in the
-  registry of the same declaration that wrapped it, never a different one's — so pass
-  `RoutesHandlerBuilder` the `Router` and the `Registry` of the same `Routes`, together:
+  Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
+  is declared, so an instance can only ever be looked up in the registry of that same declaration,
+  never a different one's: pass [`RoutesHandlerBuilder`](#handling-requests) the `Router` and the
+  `Registry` of the same `Routes`, together (`$routes->registry()`).
+- **`Http\LazyRoutes` declares lazily instead,** for when declaring on every request costs too much.
+  `$define` gets a fresh tree and only runs when the route cache has no entry, so a request answered
+  from the cache declares nothing at all:
 
   ```php
-  $routes = new Routes();
-  // ... declare on $routes ...
+  use SilenZ\Segmatch\Http\LazyRoutes;
 
-  $router = new Router($routes->table());
-  $builder = new RoutesHandlerBuilder($container, $routes->registry(), $router);
-  $response = $builder->build($request)->handle($request);
+  $table = LazyRoutes::table(static function (LazyRoutes $routes): void {
+      $routes->middleware(CorsMiddleware::class);
+      $routes->get('/', HomeController::class);
+      $routes->group('/api')->middleware('api')->get('/users/{id}', [UserController::class, 'show']);
+  }, 'routes-' . APP_VERSION);
+
+  $router = new Router($table, new FileCache(__DIR__ . '/var/cache'));
   ```
 
-  Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
-  is declared, which is why instances need routes declared eagerly, on every request (see above): the
-  ids baked into a cached route's metadata only make sense together with the registry of the same,
-  current declaration. A warm request therefore declares its routes as usual and still resolves every
-  instance correctly. Routes declared lazily, only on a cache miss, can't have instances at all — see
-  `Http\LazyRoutes` in [Handling requests](#handling-requests).
+  The price: every handler, middleware entry and filter must be a class name or container identifier
+  — an instance or closure would only exist on the request that built the cache, so `$define` throws
+  an `InvalidRouteException` the moment it declares one. In exchange, nothing it declares is ever
+  wrapped, so an all-lazy router needs no `Registry` of its own: pass `RoutesHandlerBuilder` a fresh
+  `new Registry()` instead of `$routes->registry()`.
 
 ### Filters: methods and your own conditions
 
@@ -338,10 +341,9 @@ $response = $builder->build($request)->handle($request);
   factory for `Http\HeadMiddleware`; a container that autowires constructor arguments needs no
   registration of its own. Each middleware entry must resolve to a
   `Psr\Http\Server\MiddlewareInterface`, and the handler to a `Psr\Http\Server\RequestHandlerInterface`.
-- **`$registry` must be the `Http\Registry` of the same declaration that built `$router`** —
-  `$routes->registry()` above, never a different `Routes`' one, or the ids it wrapped real instances
-  into won't resolve to the right thing. Routes declared with `Http\LazyRoutes` need no registry of
-  their own; pass a fresh `new Registry()` for an all-lazy router.
+- **`$registry` must be the one the same declaration built `$router` with** — `$routes->registry()`
+  above, never a different `Routes`' one (see [HTTP routes](#http-routes)); a fresh `new Registry()`
+  for a router built from `Http\LazyRoutes` instead.
 - **`$router` is already built** — bring your own, shared across requests the way
   `Router::matcher()` caches its own compiled routes (see [Caching](#caching)); `RoutesHandlerBuilder`
   doesn't build or memoize one itself.
@@ -351,29 +353,6 @@ $response = $builder->build($request)->handle($request);
   must return a `ResponseInterface`. The route's parameters are on the request as usual. Declaring
   checks the pair's shape, and that the method exists when the target is an instance or an existing
   class.
-- **`Http\LazyRoutes` declares lazily instead,** for when declaring on every request costs too much —
-  a `Http\LazyRoute`'s `->filter()`, `->middleware()` and handler take only a class name or container
-  identifier, never an instance, so this is `Http\Routes` with no `Registry` at all. `$define` gets a
-  fresh `LazyRoutes` and only runs when the route cache has no entry, so a request answered from the
-  cache declares nothing at all:
-  ```php
-  use SilenZ\Segmatch\Http\LazyRoutes;
-  use SilenZ\Segmatch\Http\Registry;
-
-  $table = LazyRoutes::table(static function (LazyRoutes $routes): void {
-      $routes->middleware(CorsMiddleware::class);
-      $routes->get('/', HomeController::class);
-      $routes->group('/api')->middleware('api')->get('/users/{id}', [UserController::class, 'show']);
-  }, 'routes-' . APP_VERSION);
-
-  $router = new Router($table, new FileCache(__DIR__ . '/var/cache'));
-  $builder = new RoutesHandlerBuilder($container, new Registry(), $router);
-  ```
-  The price: every handler, middleware entry and filter must be a class name or container identifier.
-  An instance or closure would only exist on the request that built the cache, so `$define` throws an
-  `InvalidRouteException` the moment it declares one — there's no registry for it to end up in instead.
-  Root middleware still wraps every outcome, since it's cached with the routes as the table's metadata
-  (see [Caching](#caching)).
 - **The match is a request attribute.** PSR-15 handlers take only the request, so
   `$request->getAttribute(Found::class)` gives the route's own middleware and handler an
   `Http\Found`: its `params` (URL-decoded, by name), `name` and `tags`. Parameters are deliberately
