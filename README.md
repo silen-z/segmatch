@@ -152,11 +152,10 @@ structure is lazy and cache-gated, not declaring them:
 
 ```php
 use SilenZ\Segmatch\Cache\FileCache;
-use SilenZ\Segmatch\Http\Registry;
 use SilenZ\Segmatch\Http\Routes;
 use SilenZ\Segmatch\Router;
 
-$routes = new Routes(new Registry());
+$routes = new Routes();
 $routes->get('/', HomeController::class);
 $routes->map(['GET', 'POST'], '/contact', ContactController::class);
 $routes->any('/webhooks/{provider}', WebhookController::class);
@@ -177,11 +176,11 @@ $router = new Router(
 
 - **Verb helpers:** `get()`, `post()`, `put()`, `patch()`, `delete()` and `options()` declare a
   route for one method; `map()` for several; `any()` for every method.
-- **The tree needs a `Http\Registry`,** the store that keeps real instances out of the route cache
-  (see below). One `Registry` is shared by the root and every group, so it has to be the same one
-  throughout a tree. To answer requests as well as declare them, let
-  [`RoutesHandlerBuilder`](#handling-requests) own all of it — `new RoutesHandlerBuilder($container)`
-  gives you both the tree and the registry, already wired together.
+- **The tree carries its own `Http\Registry`,** the store that keeps real instances out of the route
+  cache (see below) — `new Routes()` creates one for you. One `Registry` is shared by the root and
+  every group, so it has to be the same one throughout a tree; `$routes->registry()` gives it back, to
+  pass to [`RoutesHandlerBuilder`](#handling-requests) alongside the `Router` built from this same
+  tree's `table()`.
 - **Route builder:** each call returns a `Route`, refined with `->name()`, `->middleware()`,
   `->tag()` and `->filter()`.
 - **Groups:** `group()` takes an optional prefix and returns a nested `Routes`; `->middleware()`,
@@ -210,23 +209,25 @@ $router = new Router(
   $routes->group('/api')->middleware(new RateLimiter($rateLimiterConfig))->get(...);
   ```
 
-  `Http\RoutesHandlerBuilder` owns the tree it answers from, and with it the registry that resolves
-  those ids back, so a handler, middleware entry or filter declared as a real instance can never be
-  looked up in another declaration's registry — a `Router` built elsewhere can't even be handed to it:
+  A handler, middleware entry or filter declared as a real instance can only ever be looked up in the
+  registry of the same declaration that wrapped it, never a different one's — so pass
+  `RoutesHandlerBuilder` the `Router` and the `Registry` of the same `Routes`, together:
 
   ```php
-  $builder = new RoutesHandlerBuilder($container);
-  $routes = $builder->routes();
+  $routes = new Routes();
   // ... declare on $routes ...
-  $response = $builder->handler($request)->handle($request);
+
+  $router = new Router($routes->table());
+  $builder = new RoutesHandlerBuilder($container, $routes->registry(), $router);
+  $response = $builder->build($request)->handle($request);
   ```
 
   Unlike the compiled routes, the registry is never cached — it's rebuilt fresh every time `$routes`
   is declared, which is why instances need routes declared eagerly, on every request (see above): the
   ids baked into a cached route's metadata only make sense together with the registry of the same,
   current declaration. A warm request therefore declares its routes as usual and still resolves every
-  instance correctly. Routes declared lazily, only on a cache miss, can't have instances at all —
-  see `lazyRoutes()` in [Handling requests](#handling-requests).
+  instance correctly. Routes declared lazily, only on a cache miss, can't have instances at all — see
+  `Http\LazyRoutes` in [Handling requests](#handling-requests).
 
 ### Filters: methods and your own conditions
 
@@ -308,67 +309,71 @@ middleware that runs before `RoutesHandlerBuilder`.
 
 ### Handling requests
 
-`Http\RoutesHandlerBuilder` answers requests from the routes it owns. `handler()` returns the PSR-15
-handler for one request — the matched route's middleware and handler as one stack built with
+`Http\RoutesHandlerBuilder` answers requests from an already-built `Router`. `build()` returns the
+PSR-15 handler for one request — the matched route's middleware and handler as one stack built with
 [Relay](https://relayphp.com/), or a 404/405 handler — so you don't handle `RouteMatch`, `NoMatch`,
 methods and filters yourself:
 
 ```php
+use SilenZ\Segmatch\Http\Routes;
 use SilenZ\Segmatch\Http\RoutesHandlerBuilder;
+use SilenZ\Segmatch\Router;
 
-// $container resolves filters, middleware, handlers and the builder's own fallback handlers
-$builder = new RoutesHandlerBuilder($container);
-$routes = $builder->routes();
-
+$routes = new Routes();
 $routes->get('/', HomeController::class);
 $routes->group('/api')->middleware('api')->get('/users/{id}', [UserController::class, 'show']);
 
-$response = $builder->handler($request)->handle($request);
+// $container resolves filters, middleware, handlers and the builder's own fallback handlers
+$router = new Router($routes->table());
+$builder = new RoutesHandlerBuilder($container, $routes->registry(), $router);
+
+$response = $builder->build($request)->handle($request);
 ```
 
 - **`$request` is a PSR-7 `ServerRequestInterface`.** The path comes from
   `$request->getUri()->getPath()`.
-- **`$container` is a PSR-11 `ContainerInterface`, and the only constructor argument.** It resolves
-  everything a stack entry is named as: the route's middleware and handler, its filters, and the
-  three fallback handlers below. So it needs a PSR-17 response factory for `Http\NotFoundHandler` and
-  `Http\AllowedMethodsHandler`, and a stream factory for `Http\HeadMiddleware`; a container that
-  autowires constructor arguments needs no registration of its own. Each middleware entry must resolve
-  to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
-  `Psr\Http\Server\RequestHandlerInterface`.
+- **`$container` is a PSR-11 `ContainerInterface`.** It resolves everything a stack entry is named as:
+  the route's middleware and handler, its filters, and the three fallback handlers below. So it needs
+  a PSR-17 response factory for `Http\NotFoundHandler` and `Http\AllowedMethodsHandler`, and a stream
+  factory for `Http\HeadMiddleware`; a container that autowires constructor arguments needs no
+  registration of its own. Each middleware entry must resolve to a
+  `Psr\Http\Server\MiddlewareInterface`, and the handler to a `Psr\Http\Server\RequestHandlerInterface`.
+- **`$registry` must be the `Http\Registry` of the same declaration that built `$router`** —
+  `$routes->registry()` above, never a different `Routes`' one, or the ids it wrapped real instances
+  into won't resolve to the right thing. Routes declared with `Http\LazyRoutes` need no registry of
+  their own; pass a fresh `new Registry()` for an all-lazy router.
+- **`$router` is already built** — bring your own, shared across requests the way
+  `Router::matcher()` caches its own compiled routes (see [Caching](#caching)); `RoutesHandlerBuilder`
+  doesn't build or memoize one itself.
 - **A handler may also be `[target, 'method']`,** e.g. `[UserController::class, 'show']`: the target
-  is a class name or container identifier, resolved from the container, or an instance (eager routes
-  only). It's only resolved once the request gets past the route's middleware, and
-  `$target->show($request)` must return a `ResponseInterface`. The route's parameters are on the
-  request as usual. Declaring checks the pair's shape, and that the method exists when the target is
-  an instance or an existing class.
-- **`routes()` gives the tree to declare on eagerly,** the same one every call, so the `Registry`
-  behind it can't get out of step with the routes. Declare everything before the first request: the
-  compiled table is built once, on first use.
-- **`lazyRoutes($define)` declares lazily instead,** for when declaring on every request costs too
-  much. `$define` gets a fresh tree and only runs when the route cache has no entry, so a request
-  answered from the cache declares nothing at all:
+  is a class name or container identifier, resolved from the container, or an instance (`Routes` only).
+  It's only resolved once the request gets past the route's middleware, and `$target->show($request)`
+  must return a `ResponseInterface`. The route's parameters are on the request as usual. Declaring
+  checks the pair's shape, and that the method exists when the target is an instance or an existing
+  class.
+- **`Http\LazyRoutes` declares lazily instead,** for when declaring on every request costs too much —
+  a `Http\LazyRoute`'s `->filter()`, `->middleware()` and handler take only a class name or container
+  identifier, never an instance, so this is `Http\Routes` with no `Registry` at all. `$define` gets a
+  fresh `LazyRoutes` and only runs when the route cache has no entry, so a request answered from the
+  cache declares nothing at all:
   ```php
-  $builder->lazyRoutes(static function (Routes $routes): void {
+  use SilenZ\Segmatch\Http\LazyRoutes;
+  use SilenZ\Segmatch\Http\Registry;
+
+  $table = LazyRoutes::table(static function (LazyRoutes $routes): void {
       $routes->middleware(CorsMiddleware::class);
       $routes->get('/', HomeController::class);
       $routes->group('/api')->middleware('api')->get('/users/{id}', [UserController::class, 'show']);
-  });
-  $builder->router(new FileCache(__DIR__ . '/var/cache'), 'routes-' . APP_VERSION);
+  }, 'routes-' . APP_VERSION);
+
+  $router = new Router($table, new FileCache(__DIR__ . '/var/cache'));
+  $builder = new RoutesHandlerBuilder($container, new Registry(), $router);
   ```
   The price: every handler, middleware entry and filter must be a class name or container identifier.
-  An instance or closure would only exist on the request that built the cache, so declaring one
-  throws an `InvalidRouteException`. Root middleware still wraps every outcome, since it's cached
-  with the routes as the table's metadata (see [Caching](#caching)).
-- **Pick one, once.** A builder takes either `routes()` or a single `lazyRoutes()`, before its router
-  is built; anything else throws a `LogicException`, and so does answering a request with no routes
-  declared at all.
-- **`router()` is the `Router` for those routes,** built once and reused by `handler()`. You rarely
-  call it, except to opt into caching — pass a `Cache\RouteCache` and a cache key, once, at bootstrap:
-  ```php
-  $builder->router(new FileCache(__DIR__ . '/var/cache'), 'routes-' . APP_VERSION);
-  ```
-  Without both, the routes are compiled on every request. See [Caching](#caching). Lazy routes
-  without a cache are declared once per builder, on first use.
+  An instance or closure would only exist on the request that built the cache, so `$define` throws an
+  `InvalidRouteException` the moment it declares one — there's no registry for it to end up in instead.
+  Root middleware still wraps every outcome, since it's cached with the routes as the table's metadata
+  (see [Caching](#caching)).
 - **The match is a request attribute.** PSR-15 handlers take only the request, so
   `$request->getAttribute(Found::class)` gives the route's own middleware and handler an
   `Http\Found`: its `params` (URL-decoded, by name), `name` and `tags`. Parameters are deliberately
@@ -384,12 +389,12 @@ $response = $builder->handler($request)->handle($request);
 
   | Case | Answer | To change it |
   | --- | --- | --- |
-  | No route for the path | `Http\NotFoundHandler`: 404 | `handler()`'s `$notFoundHandler` |
+  | No route for the path | `Http\NotFoundHandler`: 404 | `build()`'s `$notFoundHandler` |
   | Routes for the path, not the method | `Http\AllowedMethodsHandler`: 405 + `Allow` | — |
   | The same, for an OPTIONS request | `Http\AllowedMethodsHandler`: 200 + `Allow` | — |
 
   ```php
-  $response = $builder->handler($request, new MyNotFoundPage($twig))->handle($request);
+  $response = $builder->build($request, new MyNotFoundPage($twig))->handle($request);
   ```
 
   For the latter two, middleware sees `$request->getAttribute(MethodNotAllowed::class)`, whose
@@ -410,7 +415,7 @@ $response = $builder->handler($request)->handle($request);
 - **All middleware is declared on the routes, not on the builder.** Group middleware
   (`$r->group('/api')->middleware(...)`) only runs for the routes in that group — there's no "wrong
   method" or "no route" response to decorate for a path the group doesn't own. Middleware on the root
-  `Http\Routes` (`$builder->routes()` above) is different: it also wraps the not-found,
+  `Http\Routes` (`$routes` above) is different: it also wraps the not-found,
   method-not-allowed and OPTIONS answers, so it's the way to run something for every outcome, matched
   route or not — e.g. CORS, which must still decorate a 404 or a preflight to a path with no route:
 
@@ -440,7 +445,7 @@ $response = $builder->handler($request)->handle($request);
   ```
 - **Middleware that must run before matching** — anything that changes the request, or sets the
   attributes filters read — goes in a stack around the builder instead; its last entry is a one-liner,
-  `return $builder->handler($request)->handle($request);`. Unlike `$routes->middleware()`, this runs
+  `return $builder->build($request)->handle($request);`. Unlike `$routes->middleware()`, this runs
   before the route is even looked up, so it can affect matching itself.
 
 ### URL generation
