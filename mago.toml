@@ -20,8 +20,8 @@ cyclomatic-complexity = { threshold = 30, exclude = ["src/Matcher.php"] }
 kan-defect = { threshold = 2.5, exclude = ["src/Matcher.php"] }
 halstead = { exclude = ["src/Matcher.php", "tests/", "benchmarks/"] }
 
-# Data-provider heavy test classes and benchmark classes legitimately have many methods, and so
-# does Http\Routes with one helper per HTTP method.
-too-many-methods = { exclude = ["tests/", "benchmarks/", "src/Http/Routes.php"] }
+# Data-provider heavy test classes and benchmark classes legitimately have many methods, and so do
+# Http\Routes and Http\LazyRoutes, each with one helper per HTTP method.
+too-many-methods = { exclude = ["tests/", "benchmarks/", "src/Http/Routes.php", "src/Http/LazyRoutes.php"] }
 
 no-else-clause = { enabled = false }
