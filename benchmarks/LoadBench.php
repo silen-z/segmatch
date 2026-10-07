@@ -42,7 +42,7 @@ final class LoadBench
 
     public function benchFlat(): void
     {
-        Routers::cachedFlat($this->fixture)->matcher();
+        Routers::cachedFlat($this->fixture)->metadata();
     }
 
     public function benchFastRoute(): void

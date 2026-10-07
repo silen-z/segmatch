@@ -28,21 +28,21 @@ final class Flattener
      * @param BuildNode $root the tree, with the routes without parameters already moved out into $static
      * @param list<RouteDefinition> $routes
      * @param array<array-key, non-empty-list<int>> $static full path => route ids, in declaration order
-     * @param mixed $tableMetadata the table's own metadata, {@see \SilenZ\Segmatch\RouteTable::metadata()}
+     * @param mixed $metadata the table's own metadata, {@see \SilenZ\Segmatch\RouteTable::metadata()}
      *
      * @return CompiledRoutes
      */
-    public static function flatten(BuildNode $root, array $routes, array $static, mixed $tableMetadata): array
+    public static function flatten(BuildNode $root, array $routes, array $static, mixed $metadata): array
     {
         $compiled = [
             'version' => Compiler::FORMAT_VERSION,
-            'table' => $tableMetadata,
+            'metadata' => $metadata,
             'static' => [],
             'edges' => [],
             'param' => [],
             'catch' => [],
             'routes' => [],
-            'metadata' => [],
+            'routeMetadata' => [],
             'paramNames' => [],
         ];
 
@@ -85,7 +85,7 @@ final class Flattener
         }
 
         foreach ($routes as $id => $route) {
-            $compiled['metadata'][] = $route->metadata;
+            $compiled['routeMetadata'][] = $route->metadata;
 
             $names = [];
             foreach ($route->segments as $segment) {

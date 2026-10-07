@@ -110,7 +110,6 @@ final class RouterTest extends TestCase
         $router->match('/b');
 
         static::assertCount(1, $calls);
-        static::assertSame($router->matcher(), $router->matcher());
     }
 
     public function testCachedRoutesAreNotDeclaredAgain(): void
@@ -205,7 +204,7 @@ final class RouterTest extends TestCase
             new RouteDefinition('/users/{id}', 'show'),
         ]));
 
-        $definitions = [...$router->definitions()];
+        $definitions = [...$router->table()->definitions()];
 
         static::assertCount(2, $definitions);
         static::assertSame('/users', $definitions[0]->path);
@@ -221,8 +220,8 @@ final class RouterTest extends TestCase
             return [new RouteDefinition('/a', 'a')];
         }));
 
-        $router->definitions();
-        $router->definitions();
+        $router->table()->definitions();
+        $router->table()->definitions();
 
         static::assertCount(2, $calls);
     }
@@ -239,17 +238,17 @@ final class RouterTest extends TestCase
         )], 'routes'), $cache);
 
         static::assertSame('first', self::route($laterRouter->match('/a')));
-        static::assertSame('second', iterator_to_array($laterRouter->definitions())[0]->metadata);
+        static::assertSame('second', iterator_to_array($laterRouter->table()->definitions())[0]->metadata);
     }
 
-    public function testTableMetadataIsNullByDefault(): void
+    public function testMetadataIsNullByDefault(): void
     {
         $router = new Router(self::table(static fn(): array => [new RouteDefinition('/a', 'a')]));
 
-        static::assertNull($router->tableMetadata());
+        static::assertNull($router->metadata());
     }
 
-    public function testTableMetadataComesFromTheCacheWithoutDeclaringAgain(): void
+    public function testMetadataComesFromTheCacheWithoutDeclaringAgain(): void
     {
         $cache = self::memoryCache();
         $calls = new ArrayObject();
@@ -267,17 +266,17 @@ final class RouterTest extends TestCase
             },
         );
 
-        static::assertSame(['middleware' => ['first']], new Router($table('first'), $cache)->tableMetadata());
+        static::assertSame(['middleware' => ['first']], new Router($table('first'), $cache)->metadata());
         // Answered from the cache: neither the routes nor the table metadata are produced again.
-        static::assertSame(['middleware' => ['first']], new Router($table('second'), $cache)->tableMetadata());
+        static::assertSame(['middleware' => ['first']], new Router($table('second'), $cache)->metadata());
         static::assertSame(['definitions', 'metadata'], $calls->getArrayCopy());
     }
 
-    public function testTableMetadataMayBeGivenAsAPlainValue(): void
+    public function testMetadataMayBeGivenAsAPlainValue(): void
     {
         $router = new Router(new RouteTable([], metadata: ['middleware' => ['cors']]));
 
-        static::assertSame(['middleware' => ['cors']], $router->tableMetadata());
+        static::assertSame(['middleware' => ['cors']], $router->metadata());
     }
 
     public function testDefinitionsMayBeGivenAsAPlainArray(): void
@@ -287,11 +286,11 @@ final class RouterTest extends TestCase
         static::assertSame('a', self::route($router->match('/a')));
     }
 
-    public function testTableMetadataIsNeverMatched(): void
+    public function testMetadataIsNeverMatched(): void
     {
         $router = new Router(new RouteTable([], metadata: 'table'));
 
         static::assertInstanceOf(NoMatch::class, $router->match('/'));
-        static::assertSame([], $router->matcher()->metadata());
+        static::assertSame([], $router->routes());
     }
 }

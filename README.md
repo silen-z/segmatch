@@ -46,14 +46,15 @@ if ($result instanceof RouteMatch) {
   `RouteDefinition` parses its path when it's created, so a malformed path throws where it's
   declared. `Http\Routes` gives you one too (`$routes->table(...)`, see [HTTP routes](#http-routes)).
 - A `RouteTable` also carries an `InstanceRegistry` (`registry()`, defaulting to an empty one),
-  read back the same way from `Router::registry()`. The core router never reads it — it's opaque
-  cargo, there purely so a declaration layer like `Http\Routes` can keep it paired with the table
-  it was built for; see [HTTP routes](#http-routes).
+  read back the same way from `$router->table()->registry()`. The core router never reads it — it's
+  opaque cargo, there purely so a declaration layer like `Http\Routes` can keep it paired with the
+  table it was built for; see [HTTP routes](#http-routes).
 - `match()` takes the path only (no query string) and returns a `RouteMatch` or a `NoMatch`.
   Parameter values are `rawurldecode`d.
-- `Router` is a thin entry point over the lower-level pieces.
-  `new Matcher(Compiler::compile(new RouteTable($routes)))` gives a matcher without any caching, and
-  `$router->matcher()` returns the router's own one.
+- `Router` is a thin entry point over the lower-level pieces, exposing `match()`, `metadata()` and
+  `routes()` (the route table's own metadata, and every route's, both from the cache on a hit).
+  `new Matcher(Compiler::compile(new RouteTable($routes)))` gives the same thing without any
+  caching, for whoever wants to skip `Router` entirely.
 
 Metadata is written into the cache, so it may only contain scalars, `null`, enums and arrays of
 those. Anything else is rejected at compile time.
@@ -82,7 +83,7 @@ Caching works like FastRoute's cached dispatcher:
 - **A table can cache metadata of its own.** `new RouteTable($definitions, $key, metadata: ...)`
   takes plain data that belongs to the routes as a whole rather than to any one route, or a closure
   producing it, which like the definitions' only runs on a miss. It's compiled and cached with the
-  routes; `$router->tableMetadata()` reads it back either way. Matching never returns it.
+  routes; `$router->metadata()` reads it back either way. Matching never returns it.
 
 ### Several routes per path and filters
 
@@ -350,8 +351,8 @@ $response = $builder->build($request)->handle($request);
 - **`$router` is already built** — bring your own, shared across requests the way
   `Router::matcher()` caches its own compiled routes (see [Caching](#caching)); `HandlerBuilder`
   doesn't build or memoize one itself. A handler, middleware entry or filter declared as a real
-  instance or closure is looked up in `$router->registry()` — see [HTTP routes](#http-routes) — so
-  there's no separate registry argument here to keep in sync with `$router`.
+  instance or closure is looked up in `$router->table()->registry()` — see [HTTP routes](#http-routes)
+  — so there's no separate registry argument here to keep in sync with `$router`.
 - **A handler may also be `[target, 'method']`,** e.g. `[UserController::class, 'show']`: the target
   is a class name or container identifier, resolved from the container, or an instance (`Routes` only).
   It's only resolved once the request gets past the route's middleware, and `$target->show($request)`
@@ -462,12 +463,12 @@ methods, and filter classes that don't implement `Http\RouteFilter`.
 
 ### Declared routes, and generating OpenAPI
 
-`Router::definitions()` returns the routes as declared — full paths and metadata, uncompiled, never
-read from or written to the cache. It's for tooling that needs the declarations themselves, not for
-matching requests:
+`$router->table()->definitions()` returns the routes as declared — full paths and metadata,
+uncompiled, never read from or written to the cache. It's for tooling that needs the declarations
+themselves, not for matching requests:
 
 ```php
-foreach ($router->definitions() as $definition) {
+foreach ($router->table()->definitions() as $definition) {
     $definition->path;     // "/api/users/{id}"
     $definition->metadata; // ['handler' => ..., 'name' => 'users.show', 'methods' => ['GET'], ...]
 }
@@ -484,7 +485,7 @@ use SilenZ\Segmatch\OpenApi\PathsGenerator;
 $document = new OA\OpenApi(
     openapi: '3.1.0',
     info: new OA\Info(title: 'Example API', version: '1.0.0'),
-    paths: PathsGenerator::generate($router->definitions()),
+    paths: PathsGenerator::generate($router->table()->definitions()),
 );
 
 $document->toJson(); // or ->toYaml(), ->saveAs(...), ->validate()

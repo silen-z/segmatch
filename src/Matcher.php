@@ -63,12 +63,12 @@ final readonly class Matcher
     private array $routes;
 
     /** @var list<mixed> route id => metadata */
-    private array $metadata;
+    private array $routeMetadata;
 
     /** @var array<int, non-empty-list<string>> route id => parameter names */
     private array $paramNames;
 
-    private mixed $table;
+    private mixed $metadata;
 
     /**
      * @param CompiledRoutes $compiled output of {@see Compiler::compile()}
@@ -88,9 +88,9 @@ final readonly class Matcher
         $this->param = $compiled['param'];
         $this->catch = $compiled['catch'];
         $this->routes = $compiled['routes'];
-        $this->metadata = $compiled['metadata'];
+        $this->routeMetadata = $compiled['routeMetadata'];
         $this->paramNames = $compiled['paramNames'];
-        $this->table = $compiled['table'];
+        $this->metadata = $compiled['metadata'];
     }
 
     /**
@@ -98,9 +98,9 @@ final readonly class Matcher
      * routes were compiled — from the cache like everything else, so without declaring the routes
      * again. Never returned by matching: it belongs to no route.
      */
-    public function tableMetadata(): mixed
+    public function metadata(): mixed
     {
-        return $this->table;
+        return $this->metadata;
     }
 
     /**
@@ -109,9 +109,9 @@ final readonly class Matcher
      *
      * @return list<mixed>
      */
-    public function metadata(): array
+    public function routeMetadata(): array
     {
-        return $this->metadata;
+        return $this->routeMetadata;
     }
 
     /**
@@ -140,7 +140,7 @@ final readonly class Matcher
         $static = $this->static[$path] ?? self::NONE;
         if ($static !== self::NONE) {
             if ($filter === null) {
-                return new RouteMatch($this->metadata[is_int($static) ? $static : $static[0]], []);
+                return new RouteMatch($this->routeMetadata[is_int($static) ? $static : $static[0]], []);
             }
 
             $match = $this->select(is_int($static) ? [$static] : $static, [], $filter, $rejected);
@@ -325,7 +325,7 @@ final readonly class Matcher
             $params[$name] = rawurldecode($values[$position]);
         }
 
-        return new RouteMatch($this->metadata[$routeId], $params);
+        return new RouteMatch($this->routeMetadata[$routeId], $params);
     }
 
     /**

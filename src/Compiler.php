@@ -28,18 +28,18 @@ use function sprintf;
  * Compiled routes are a handful of flat tables. Tree tables are sparse maps keyed by node id (the
  * root is node 0); route tables are keyed by route id (declaration order):
  *
- *     'table'         => [...],                          // the route table's own metadata, never matched
+ *     'metadata'      => [...],                          // the route table's own metadata, never matched
  *     'static'        => ['/users' => 4, '/' => [0, 1]], // full path => route id(s), parameterless routes
  *     'edges'         => [0 => ['users' => 1]],          // node => static segment => child node
  *     'param'         => [1 => 2],                       // node => child node of its {param} edge
  *     'catch'         => [3 => [false, 7]],               // node => [needs a non-empty rest
  *                                                         // ({name+}, not {name*}), ...route ids]
  *     'routes'        => [2 => 5],                       // node => route id(s) ending there
- *     'metadata'      => [[...], ...],                   // route id => the route's metadata
+ *     'routeMetadata' => [[...], ...],                   // route id => the route's metadata
  *     'paramNames'    => [5 => ['id']],                  // route id => parameter names, capture order
  *
- * 'table' is whatever {@see RouteTable::metadata()} gave (null by default): it belongs to the table
- * as a whole, not to any route, so no node points to it.
+ * 'metadata' is whatever {@see RouteTable::metadata()} gave (null by default): it belongs to the
+ * table as a whole, not to any route, so no node points to it.
  *
  * Route id(s) are a single id, or a list in declaration order when several routes share a path.
  *
@@ -58,13 +58,13 @@ use function sprintf;
  *     declaration order
  * @psalm-type CompiledRoutes = array{
  *     version: int,
- *     table: mixed,
+ *     metadata: mixed,
  *     static: array<array-key, RouteIds>,
  *     edges: array<int, array<array-key, int>>,
  *     param: array<int, int>,
  *     catch: array<int, CatchEntry>,
  *     routes: array<int, RouteIds>,
- *     metadata: list<mixed>,
+ *     routeMetadata: list<mixed>,
  *     paramNames: array<int, non-empty-list<string>>
  * }
  */
@@ -74,11 +74,11 @@ final class Compiler
      * The version of the compiled structure above. Bumped whenever it changes, so entries cached by
      * an incompatible version are recompiled instead of misread.
      */
-    public const int FORMAT_VERSION = 10;
+    public const int FORMAT_VERSION = 11;
 
     /**
      * Compiles the table's definitions in declaration order, which decides between routes sharing a
-     * path, and its metadata, kept as-is for {@see Matcher::tableMetadata()}. Anything but a
+     * path, and its metadata, kept as-is for {@see Matcher::metadata()}. Anything but a
      * {@see RouteDefinition} among the definitions is rejected, and both must be plain data. The
      * table's cache key plays no part.
      *
@@ -107,14 +107,14 @@ final class Compiler
         }
 
         // @mago-expect analysis:mixed-assignment
-        $tableMetadata = $table->metadata();
-        self::assertExportable($tableMetadata, 'the route table');
+        $metadata = $table->metadata();
+        self::assertExportable($metadata, 'the route table');
 
         $root = self::tree($routes);
         // Must run before the flattener assigns node ids: it prunes the tree.
         $static = self::staticTable($root, $routes);
 
-        return Flattener::flatten($root, $routes, $static, $tableMetadata);
+        return Flattener::flatten($root, $routes, $static, $metadata);
     }
 
     /**

@@ -31,7 +31,7 @@ final readonly class RouteTable
     private Closure|iterable $definitions;
 
     /**
-     * @param (callable(): iterable<int, RouteDefinition>)|iterable<int, RouteDefinition> $definitions
+     * @param iterable<int, RouteDefinition>|callable(): iterable<int, RouteDefinition> $definitions
      *     the routes, in declaration order: a callable (a closure, an invokable object, a function or
      *     method name) is only called when they're needed, i.e. on a cache miss, which is what keeps
      *     declaring them out of a warm request; an array is used as given. Give a generator as a
@@ -43,8 +43,8 @@ final readonly class RouteTable
      *     what applies to every request whether a route matches or not: plain data like a route's own,
      *     cached with the routes, or a closure producing it, called like the definitions' only on a
      *     cache miss. Only a `Closure` counts as lazy here, not any callable: plain metadata like
-     *     `'trim'` or `['Foo', 'bar']` would pass for one. Read back with
-     *     {@see Matcher::tableMetadata()} or {@see Router::tableMetadata()}
+     *     `'trim'` or `['Foo', 'bar']` would pass for one. Read back with {@see metadata()}, or, from
+     *     the cache, with {@see Matcher::metadata()} via {@see Router::matcher()}
      * @param InstanceRegistry $registry opaque to the core router, which never reads it — a plain
      *     value like `$cacheKey`, not behind the lazy `$metadata`, since it can hold live
      *     instances/closures that could never survive the compiled cache. Exists so a declaration
@@ -52,7 +52,7 @@ final readonly class RouteTable
      *     passing it around separately; see {@see Http\HandlerBuilder}
      */
     public function __construct(
-        callable|iterable $definitions,
+        iterable|callable $definitions,
         private ?string $cacheKey = null,
         private mixed $metadata = null,
         private InstanceRegistry $registry = new InstanceRegistry(),

@@ -82,15 +82,15 @@ final class CompilerTest extends TestCase
         Compiler::compile(new RouteTable($define()));
     }
 
-    public function testKeepsTableMetadataApartFromTheRoutes(): void
+    public function testKeepsTheTableMetadataApartFromTheRouteMetadata(): void
     {
         $compiled = Compiler::compile(
             new RouteTable([new RouteDefinition('/a', 'a')], metadata: ['middleware' => ['cors']]),
         );
 
-        static::assertSame(['middleware' => ['cors']], $compiled['table']);
-        static::assertSame(['a'], $compiled['metadata']);
-        static::assertSame(['middleware' => ['cors']], new Matcher($compiled)->tableMetadata());
+        static::assertSame(['middleware' => ['cors']], $compiled['metadata']);
+        static::assertSame(['a'], $compiled['routeMetadata']);
+        static::assertSame(['middleware' => ['cors']], new Matcher($compiled)->metadata());
     }
 
     public function testRejectsTableMetadataThatCannotBeCached(): void
@@ -115,8 +115,8 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 10,
-                'table' => null,
+                'version' => 11,
+                'metadata' => null,
                 // Parameterless routes are looked up by full path. A single route is stored as its
                 // id; routes sharing a path as a list in declaration order.
                 'static' => [
@@ -133,7 +133,7 @@ final class CompilerTest extends TestCase
                 'param' => [2 => 4],
                 'catch' => [3 => [true, 3]],
                 'routes' => [4 => [1, 6]],
-                'metadata' => ['users', 'user', 'health', 'files', 'about', 'create-user', 'user-by-name'],
+                'routeMetadata' => ['users', 'user', 'health', 'files', 'about', 'create-user', 'user-by-name'],
                 'paramNames' => [1 => ['id'], 3 => ['path'], 6 => ['name']],
             ],
             Compiler::compile(new RouteTable($routes)),
@@ -150,8 +150,8 @@ final class CompilerTest extends TestCase
 
         static::assertSame(
             [
-                'version' => 10,
-                'table' => null,
+                'version' => 11,
+                'metadata' => null,
                 'static' => [],
                 // Node 1 ("items") has both a {id} param edge and a catch-all, so a miss past its
                 // static "archive" edge (to node 2) must still try them: the child id is stored as
@@ -165,7 +165,7 @@ final class CompilerTest extends TestCase
                 'param' => [1 => -4, 2 => 4],
                 'catch' => [1 => [false, 2]],
                 'routes' => [3 => 1, 4 => 0],
-                'metadata' => ['archived', 'item', 'catch'],
+                'routeMetadata' => ['archived', 'item', 'catch'],
                 'paramNames' => [0 => ['id'], 1 => ['id'], 2 => ['rest']],
             ],
             Compiler::compile(new RouteTable($routes)),

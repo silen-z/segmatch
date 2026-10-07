@@ -36,39 +36,40 @@ final class Router
     }
 
     /**
-     * The routes as declared: full paths and metadata, uncompiled and never read from or written to
-     * the cache. Calls {@see RouteTable::definitions()} every time, unlike {@see matcher()}; use it for
-     * tooling that needs the declarations themselves, e.g. an index of routes by name, or generating
-     * documentation, not for matching requests.
+     * The metadata of the route table as a whole, as {@see RouteTable::metadata()} gave it when the
+     * routes were compiled — from the cache like everything else, so without declaring the routes
+     * again. Never returned by matching: it belongs to no route.
+     */
+    public function metadata(): mixed
+    {
+        return $this->matcher()->metadata();
+    }
+
+    /**
+     * The metadata of every route, by route id (declaration order), e.g. for building an index of
+     * the routes by name.
      *
-     * @return iterable<int, RouteDefinition>
+     * @return list<mixed>
      */
-    public function definitions(): iterable
+    public function routes(): array
     {
-        return $this->routes->definitions();
+        return $this->matcher()->routeMetadata();
     }
 
     /**
-     * {@see RouteTable::metadata()}, loaded from the cache or compiled on first use like the routes.
+     * The {@see RouteTable} this router was built from: its declarations uncompiled, its registry, and
+     * its cache key, none of which need compiling or a cache lookup — unlike {@see matcher()}'s own
+     * {@see Matcher::metadata()}, read from the cache on a hit like the routes themselves.
      */
-    public function tableMetadata(): mixed
+    public function table(): RouteTable
     {
-        return $this->matcher()->tableMetadata();
-    }
-
-    /**
-     * {@see RouteTable::registry()} — never lazy, so unlike {@see tableMetadata()} this needs no
-     * compiling or cache lookup.
-     */
-    public function registry(): InstanceRegistry
-    {
-        return $this->routes->registry();
+        return $this->routes;
     }
 
     /**
      * The matcher for the routes, loaded from the cache or compiled on first use.
      */
-    public function matcher(): Matcher
+    private function matcher(): Matcher
     {
         return $this->matcher ??= new Matcher($this->load());
     }

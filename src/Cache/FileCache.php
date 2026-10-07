@@ -53,7 +53,7 @@ final class FileCache implements RouteCache
         'param' => 'node => child node of its {param} edge',
         'catch' => 'node => [needs a non-empty rest ({name+}), ...route ids of its catch-all edge]',
         'routes' => 'node => route id(s) ending there',
-        'metadata' => 'route id => metadata',
+        'routeMetadata' => 'route id => metadata',
         'paramNames' => 'route id => parameter names, in capture order',
     ];
 
@@ -150,7 +150,7 @@ final class FileCache implements RouteCache
             "    'version' => " . var_export($compiled['version'], return: true) . ',',
             '',
             '    // metadata of the route table as a whole, not of any one route',
-            "    'table' => " . self::inline($compiled['table']) . ',',
+            "    'metadata' => " . self::inline($compiled['metadata']) . ',',
         ];
 
         foreach (self::TABLES as $name => $description) {
