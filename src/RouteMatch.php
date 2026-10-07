@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace SilenZ\Segmatch;
 
+/**
+ * A route {@see Matcher::match()} accepted (or, inside a filter or {@see NoMatch::$rejected}, is
+ * offering as a candidate): its metadata, as declared, and the request path's parameter values.
+ */
 final readonly class RouteMatch
 {
     /**

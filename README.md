@@ -343,16 +343,17 @@ $response = $builder->build($request)->handle($request);
 - **`$request` is a PSR-7 `ServerRequestInterface`.** The path comes from
   `$request->getUri()->getPath()`.
 - **`$container` is a PSR-11 `ContainerInterface`.** It resolves everything a stack entry is named as:
-  the route's middleware and handler, its filters, and the three fallback handlers below. So it needs
-  a PSR-17 response factory for `Http\NotFoundHandler` and `Http\AllowedMethodsHandler`, and a stream
-  factory for `Http\HeadMiddleware`; a container that autowires constructor arguments needs no
-  registration of its own. Each middleware entry must resolve to a
-  `Psr\Http\Server\MiddlewareInterface`, and the handler to a `Psr\Http\Server\RequestHandlerInterface`.
-- **`$router` is already built** — bring your own, shared across requests the way
-  `Router::matcher()` caches its own compiled routes (see [Caching](#caching)); `HandlerBuilder`
-  doesn't build or memoize one itself. A handler, middleware entry or filter declared as a real
-  instance or closure is looked up in `$router->table()->registry()` — see [HTTP routes](#http-routes)
-  — so there's no separate registry argument here to keep in sync with `$router`.
+  the route's middleware and handler, its filters, and the fallback handlers below. So it needs a
+  PSR-17 response factory for `Http\NotFoundHandler`, `Http\AllowedMethodsHandler` and
+  `Http\ErrorMiddleware`, and a stream factory for `Http\HeadMiddleware` and `Http\ErrorMiddleware`;
+  a container that autowires constructor arguments needs no registration of its own. Each middleware
+  entry must resolve to a `Psr\Http\Server\MiddlewareInterface`, and the handler to a
+  `Psr\Http\Server\RequestHandlerInterface`.
+- **`$router` is already built** — bring your own, shared across requests so its compiled routes are
+  only loaded from the cache (or compiled) once (see [Caching](#caching)); `HandlerBuilder` doesn't
+  build or memoize one itself. A handler, middleware entry or filter declared as a real instance or
+  closure is looked up in `$router->table()->registry()` — see [HTTP routes](#http-routes) — so
+  there's no separate registry argument here to keep in sync with `$router`.
 - **A handler may also be `[target, 'method']`,** e.g. `[UserController::class, 'show']`: the target
   is a class name or container identifier, resolved from the container, or an instance (`Routes` only).
   It's only resolved once the request gets past the route's middleware, and `$target->show($request)`
@@ -385,13 +386,23 @@ $response = $builder->build($request)->handle($request);
   For the latter two, middleware sees `$request->getAttribute(MethodNotAllowed::class)`, whose
   `allowed` lists the path's methods, e.g. `['GET', 'PUT', 'HEAD']` — HEAD is included whenever GET
   is.
+- **An uncaught throw becomes a plain-text 500.** `Http\ErrorMiddleware` wraps everything else —
+  the matched route's own stack, the three answers above, and the root's own middleware (see
+  [HTTP routes](#http-routes)) — so a route handler, filter, or any middleware that throws answers
+  with a `Server error` body instead of the exception reaching `build()`'s caller. Replace it with
+  `build()`'s `$errorMiddleware`, e.g. to log the exception or render a formatted error page:
+
+  ```php
+  $response = $builder->build($request, errorMiddleware: new LoggingErrorMiddleware($logger))->handle($request);
+  ```
 - **HEAD matches GET routes automatically.** A route declared for HEAD itself still wins.
-- **A HEAD response never has a body,** whoever answers — a GET route, a HEAD or `any()` route, or
-  the not-found and method-not-allowed handlers: it's dropped, keeping status and headers, as
-  RFC 9110 requires. The request is never rewritten: filters, middleware and the handler all see
-  HEAD, so a handler can skip building a body it won't send. A handler for several methods should
-  therefore branch on the method that changes things — `if ($method === 'POST')`, not
-  `if ($method === 'GET') ... else` — or a HEAD request takes the POST path.
+- **A HEAD response never has a body,** whoever answers — a GET route, a HEAD or `any()` route, the
+  not-found and method-not-allowed handlers, or `ErrorMiddleware`'s own 500: it's dropped, keeping
+  status and headers, as RFC 9110 requires. The request is never rewritten: filters, middleware and
+  the handler all see HEAD, so a handler can skip building a body it won't send. A handler for
+  several methods should therefore branch on the method that changes things —
+  `if ($method === 'POST')`, not `if ($method === 'GET') ... else` — or a HEAD request takes the
+  POST path.
 - **OPTIONS is answered automatically.** A route declared for OPTIONS, or with `any()`, takes the
   request; otherwise the OPTIONS handler does, where other methods would get a 405. Filters run
   against the OPTIONS request itself.
@@ -469,14 +480,22 @@ themselves, not for matching requests:
 
 ```php
 foreach ($router->table()->definitions() as $definition) {
-    $definition->path;     // "/api/users/{id}"
-    $definition->metadata; // ['handler' => ..., 'name' => 'users.show', 'methods' => ['GET'], ...]
+    $definition->path;         // "/api/users/{id}"
+    $definition->metadata;     // ['handler' => ..., 'name' => 'users.show', 'methods' => ['GET'], ...]
+    $definition->pathTemplate; // "/api/users/{id}" — every parameter as "{name}", catch-alls included
+    $definition->parameters;   // [new PathParameter('id', required: true)], in path order
 }
 ```
 
+`pathTemplate` and `parameters` are what `OpenApi\PathsGenerator` (below) builds its own path
+parameters from; use them directly for any other tooling that needs a route's parameters without
+re-deriving them from `path`.
+
 `OpenApi\PathsGenerator` builds the `PathItem`s of an OpenAPI document from exactly that, as
 [zircote/swagger-php](https://github.com/zircote/swagger-php) `OpenApi\Attributes` objects — the same
-types that package's own attributes use, just built by hand instead of scanned from docblocks:
+types that package's own attributes use, just built by hand instead of scanned from docblocks.
+zircote/swagger-php is a regular (not dev-only) dependency, so it's always installed alongside
+segmatch, whether or not you use `PathsGenerator`:
 
 ```php
 use OpenApi\Attributes as OA;
